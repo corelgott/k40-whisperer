@@ -1,5 +1,5 @@
 from fastapi import APIRouter, HTTPException, UploadFile, File, status
-from typing import List
+from typing import List, Optional, Dict, Any
 import uuid
 from datetime import datetime
 import json
@@ -13,6 +13,35 @@ from app.svg.parser import parse_svg_file, extract_coordinates_from_path
 from app.git.repository import GitRepository
 
 router = APIRouter()
+
+
+def resolve_path_settings(
+    path_config: Dict[str, Any],
+    group: Optional[Dict[str, Any]],
+    project: Dict[str, Any]
+) -> Dict[str, Any]:
+    """Resolve effective settings for a path considering inheritance"""
+    action = path_config.get("action")
+    if action is None:
+        action = (group and group.get("default_action")) or project.get("default_action", "cut")
+    
+    speed = path_config.get("speed_mm_s")
+    if speed is None:
+        speed = (group and group.get("default_speed_mm_s")) or project.get("default_speed_mm_s", 100.0)
+    
+    reps = path_config.get("repetitions")
+    if reps is None:
+        reps = (group and group.get("default_repetitions")) or project.get("default_repetitions", 1)
+    
+    return {
+        "action": action,
+        "speed_mm_s": speed,
+        "repetitions": reps,
+        "effective_action": action,
+        "effective_speed_mm_s": speed,
+        "effective_repetitions": reps
+    }
+
 
 @router.post("/projects", response_model=Project, status_code=status.HTTP_201_CREATED)
 async def create_project(project: ProjectCreate):
@@ -319,6 +348,9 @@ async def create_virtual_group(project_id: str, group: VirtualGroupCreate):
         id=group_id,
         name=group.name,
         project_id=project_id,
+        default_action=None,
+        default_speed_mm_s=None,
+        default_repetitions=None,
         order_index=len(config_data.get("virtual_groups", [])),
         path_ids=[]
     )
@@ -346,7 +378,7 @@ async def get_virtual_groups(project_id: str):
     return [VirtualGroup(**g) for g in config_data.get("virtual_groups", [])]
 
 @router.put("/projects/{project_id}/paths/{path_id}/move")
-async def move_path_to_group(project_id: str, path_id: str, target_group_id: str = None):
+async def move_path_to_group(project_id: str, path_id: str, target_group_id: Optional[str] = None):
     project_dir = settings.projects_dir / project_id
     config_file = project_dir / "config.json"
     
@@ -386,3 +418,71 @@ async def move_path_to_group(project_id: str, path_id: str, target_group_id: str
     git_repo.commit(f"Move path {path_id} to group {target_group_id}")
     
     return {"status": "ok", "path_id": path_id, "virtual_group_id": target_group_id}
+
+@router.put("/projects/{project_id}/defaults")
+async def update_project_defaults(
+    project_id: str,
+    default_action: Optional[str] = None,
+    default_speed_mm_s: Optional[float] = None,
+    default_repetitions: Optional[int] = None
+):
+    project_dir = settings.projects_dir / project_id
+    if not project_dir.exists():
+        raise HTTPException(status_code=404, detail="Project not found")
+    
+    config_file = project_dir / "config.json"
+    config_data = {}
+    if config_file.exists():
+        with open(config_file, "r") as f:
+            config_data = json.load(f)
+    
+    if default_action is not None:
+        config_data["default_action"] = default_action
+    if default_speed_mm_s is not None:
+        config_data["default_speed_mm_s"] = default_speed_mm_s
+    if default_repetitions is not None:
+        config_data["default_repetitions"] = default_repetitions
+    
+    with open(config_file, "w") as f:
+        json.dump(config_data, f, indent=2)
+    
+    return {"message": "Project defaults updated successfully"}
+
+
+@router.put("/projects/{project_id}/virtual-groups/{group_id}")
+async def update_virtual_group(
+    project_id: str,
+    group_id: str,
+    name: Optional[str] = None,
+    default_action: Optional[str] = None,
+    default_speed_mm_s: Optional[float] = None,
+    default_repetitions: Optional[int] = None
+):
+    project_dir = settings.projects_dir / project_id
+    config_file = project_dir / "config.json"
+    
+    if not config_file.exists():
+        raise HTTPException(status_code=404, detail="Project not found")
+    
+    with open(config_file, "r") as f:
+        config_data = json.load(f)
+    
+    groups = config_data.get("virtual_groups", [])
+    group = next((g for g in groups if g["id"] == group_id), None)
+    
+    if not group:
+        raise HTTPException(status_code=404, detail="Virtual group not found")
+    
+    if name is not None:
+        group["name"] = name
+    if default_action is not None:
+        group["default_action"] = default_action
+    if default_speed_mm_s is not None:
+        group["default_speed_mm_s"] = default_speed_mm_s
+    if default_repetitions is not None:
+        group["default_repetitions"] = default_repetitions
+    
+    with open(config_file, "w") as f:
+        json.dump(config_data, f, indent=2)
+    
+    return VirtualGroup(**group)
