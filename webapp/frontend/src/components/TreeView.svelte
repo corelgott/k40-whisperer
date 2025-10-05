@@ -8,20 +8,22 @@
   const dispatch = createEventDispatcher()
 
   const STORAGE_KEY = 'k40-tree-collapsed-nodes'
-  let collapsedNodes: Set<string> = new Set()
-  let fileInput: HTMLInputElement
-  let selectedPathId: string | null = null
-
-  onMount(() => {
+  
+  // Initialize collapsedNodes from localStorage BEFORE first render (not in onMount)
+  let collapsedNodes: Set<string> = (() => {
     const stored = localStorage.getItem(STORAGE_KEY)
     if (stored) {
       try {
-        collapsedNodes = new Set(JSON.parse(stored))
+        return new Set(JSON.parse(stored))
       } catch (e) {
         console.error('Failed to parse stored collapse state:', e)
       }
     }
-  })
+    return new Set()
+  })()
+  
+  let fileInput: HTMLInputElement
+  let selectedPathId: string | null = null
 
   function toggleExpand(nodeId: string) {
     if (collapsedNodes.has(nodeId)) {
@@ -29,12 +31,13 @@
     } else {
       collapsedNodes.add(nodeId)
     }
-    collapsedNodes = collapsedNodes
+    collapsedNodes = new Set(collapsedNodes)  // Reassign to trigger reactivity
     localStorage.setItem(STORAGE_KEY, JSON.stringify([...collapsedNodes]))
   }
 
-  function isExpanded(nodeId: string): boolean {
-    return !collapsedNodes.has(nodeId)
+  // Pass collapsedNodes as parameter so Svelte tracks the dependency
+  function isExpanded(nodeId: string, nodes: Set<string>): boolean {
+    return !nodes.has(nodeId)
   }
 
   async function updateProjectDefault(field: string, value: any) {
@@ -160,7 +163,7 @@
     <div class="tree-row tree-row-project">
       <div class="col-handle">⋮⋮</div>
       <div class="col-name" on:click={() => toggleExpand('project')}>
-        <span class="expand-icon">{isExpanded('project') ? '▼' : '▶'}</span>
+        <span class="expand-icon">{isExpanded('project', collapsedNodes) ? '▼' : '▶'}</span>
         <span class="node-name">{project.name}</span>
       </div>
       <div class="col-action">
@@ -194,12 +197,12 @@
       </div>
     </div>
 
-    {#if isExpanded('project')}
+    {#if isExpanded('project', collapsedNodes)}
       {#each project.virtual_groups as group}
         <div class="tree-row tree-row-group" style="padding-left: 20px">
           <div class="col-handle">⋮⋮</div>
           <div class="col-name" on:click={() => toggleExpand(`group-${group.id}`)}>
-            <span class="expand-icon">{isExpanded(`group-${group.id}`) ? '▼' : '▶'}</span>
+            <span class="expand-icon">{isExpanded(`group-${group.id}`, collapsedNodes) ? '▼' : '▶'}</span>
             <span class="node-name">📁 {group.name}</span>
           </div>
           <div class="col-action">
@@ -239,7 +242,7 @@
           </div>
         </div>
 
-        {#if isExpanded(`group-${group.id}`)}
+        {#if isExpanded(`group-${group.id}`, collapsedNodes)}
           {#each getPathsForGroup(group.id) as path}
             <div
               class="tree-row tree-row-path"
@@ -295,7 +298,7 @@
         <div class="tree-row tree-row-svg" style="padding-left: 20px">
           <div class="col-handle">⋮⋮</div>
           <div class="col-name" on:click={() => toggleExpand(`svg-${svgFile.id}`)}>
-            <span class="expand-icon">{isExpanded(`svg-${svgFile.id}`) ? '▼' : '▶'}</span>
+            <span class="expand-icon">{isExpanded(`svg-${svgFile.id}`, collapsedNodes) ? '▼' : '▶'}</span>
             <span class="node-name">📄 {svgFile.filename}</span>
           </div>
           <div class="col-action"></div>
@@ -303,7 +306,7 @@
           <div class="col-reps"></div>
         </div>
 
-        {#if isExpanded(`svg-${svgFile.id}`)}
+        {#if isExpanded(`svg-${svgFile.id}`, collapsedNodes)}
           {#each svgFile.paths as path}
             {#if !path.virtual_group_id}
               <div
