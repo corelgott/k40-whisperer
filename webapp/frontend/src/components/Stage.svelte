@@ -2,6 +2,7 @@
   import { onMount, onDestroy } from 'svelte'
   import type { Project } from '../lib/api'
   import { laserPosition, executionStatus, animationState } from '../lib/stores'
+  import { svgTransformAPI } from '../lib/api'
 
   export let project: Project
 
@@ -13,6 +14,12 @@
   let isPanning = false
   let lastMouseX = 0
   let lastMouseY = 0
+  
+  let selectedSvgId: string | null = null
+  let isDraggingSvg = false
+  let dragStartX = 0
+  let dragStartY = 0
+  let dragStartTransform: any = null
 
   const WORK_AREA_WIDTH = 300
   const WORK_AREA_HEIGHT = 200
@@ -50,16 +57,83 @@
     drawStage()
   }
 
+  function handleCanvasClick(e: MouseEvent) {
+    if (!canvas || e.ctrlKey || e.metaKey || isPanning) return
+    
+    const rect = canvas.getBoundingClientRect()
+    const canvasX = e.clientX - rect.left
+    const canvasY = e.clientY - rect.top
+    
+    const worldX = (canvasX - panX) / zoom - RULER_SIZE
+    const worldY = (canvasY - panY) / zoom - RULER_SIZE
+    
+    selectedSvgId = null
+    for (const svgFile of project.svg_files) {
+      const bbox = calculateBoundingBox(svgFile)
+      if (bbox.width === 0 || bbox.height === 0) continue
+      
+      const transform = (svgFile as any).transform
+      
+      let checkX = worldX, checkY = worldY
+      if (transform) {
+        const tx = (transform.position_x ?? 0) * coordTransform.scaleX
+        const ty = (transform.position_y ?? 0) * coordTransform.scaleY
+        const sx = transform.scale_x ?? 1
+        const sy = transform.scale_y ?? 1
+        const rot = -(transform.rotation ?? 0) * Math.PI / 180
+        
+        checkX -= tx
+        checkY -= ty
+        
+        const rotX = checkX * Math.cos(rot) - checkY * Math.sin(rot)
+        const rotY = checkX * Math.sin(rot) + checkY * Math.cos(rot)
+        
+        checkX = rotX / sx
+        checkY = rotY / sy
+      }
+      
+      const bboxX = bbox.x * coordTransform.scaleX + coordTransform.offsetX
+      const bboxY = bbox.y * coordTransform.scaleY + coordTransform.offsetY
+      const bboxW = bbox.width * coordTransform.scaleX
+      const bboxH = bbox.height * coordTransform.scaleY
+      
+      if (checkX >= bboxX && checkX <= bboxX + bboxW &&
+          checkY >= bboxY && checkY <= bboxY + bboxH) {
+        selectedSvgId = svgFile.id
+        break
+      }
+    }
+    
+    drawStage()
+  }
+
   function handleMouseDown(e: MouseEvent) {
+    if (!canvas) return
+    
     if (e.ctrlKey || e.metaKey) {
       isPanning = true
       lastMouseX = e.clientX
       lastMouseY = e.clientY
       e.preventDefault()
+      return
+    }
+    
+    if (selectedSvgId) {
+      const rect = canvas.getBoundingClientRect()
+      dragStartX = (e.clientX - rect.left - panX) / zoom
+      dragStartY = (e.clientY - rect.top - panY) / zoom
+      
+      const svgFile = project.svg_files.find((s: any) => s.id === selectedSvgId)
+      if (svgFile) {
+        dragStartTransform = { ...((svgFile as any).transform || {}) }
+        isDraggingSvg = true
+      }
     }
   }
 
   function handleMouseMove(e: MouseEvent) {
+    if (!canvas) return
+    
     if (isPanning) {
       const dx = e.clientX - lastMouseX
       const dy = e.clientY - lastMouseY
@@ -68,11 +142,56 @@
       lastMouseX = e.clientX
       lastMouseY = e.clientY
       drawStage()
+      return
+    }
+    
+    if (isDraggingSvg && selectedSvgId) {
+      const rect = canvas.getBoundingClientRect()
+      const worldX = (e.clientX - rect.left - panX) / zoom
+      const worldY = (e.clientY - rect.top - panY) / zoom
+      
+      const dx = worldX - dragStartX
+      const dy = worldY - dragStartY
+      
+      const svgFile = project.svg_files.find((s: any) => s.id === selectedSvgId)
+      if (svgFile) {
+        const newX = ((dragStartTransform.position_x ?? 0) * coordTransform.scaleX + dx - RULER_SIZE) / coordTransform.scaleX
+        const newY = ((dragStartTransform.position_y ?? 0) * coordTransform.scaleY + dy - RULER_SIZE) / coordTransform.scaleY
+        
+        if (!(svgFile as any).transform) {
+          (svgFile as any).transform = { 
+            svg_id: selectedSvgId,
+            position_x: newX, 
+            position_y: newY,
+            scale_x: 1,
+            scale_y: 1,
+            rotation: 0
+          }
+        } else {
+          (svgFile as any).transform.position_x = newX
+          (svgFile as any).transform.position_y = newY
+        }
+        drawStage()
+      }
     }
   }
 
-  function handleMouseUp() {
+  async function handleMouseUp() {
+    if (isDraggingSvg && selectedSvgId) {
+      const svgFile = project.svg_files.find((s: any) => s.id === selectedSvgId)
+      if (svgFile && (svgFile as any).transform) {
+        try {
+          await svgTransformAPI.update(project.id, selectedSvgId, {
+            position_x: (svgFile as any).transform.position_x,
+            position_y: (svgFile as any).transform.position_y
+          })
+        } catch (error) {
+          console.error('Failed to save SVG transform:', error)
+        }
+      }
+    }
     isPanning = false
+    isDraggingSvg = false
   }
 
   function zoomIn() {
@@ -122,6 +241,25 @@
     }
   }
 
+  function calculateBoundingBox(svgFile: any): { x: number, y: number, width: number, height: number } {
+    const paths = svgFile.paths.filter((p: any) => p.action !== 'ignore' && p.coordinates && p.coordinates.length > 0)
+    if (paths.length === 0) return { x: 0, y: 0, width: 0, height: 0 }
+    
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+    
+    paths.forEach((path: any) => {
+      path.coordinates.forEach((coord: [number, number]) => {
+        const [x, y] = coord
+        minX = Math.min(minX, x)
+        minY = Math.min(minY, y)
+        maxX = Math.max(maxX, x)
+        maxY = Math.max(maxY, y)
+      })
+    })
+    
+    return { x: minX, y: minY, width: maxX - minX, height: maxY - minY }
+  }
+
   function drawStage() {
     if (!canvas || !ctx) return
 
@@ -160,8 +298,26 @@
       return
     }
 
-    project.svg_files.forEach(svg => {
-      svg.paths.forEach(path => {
+    project.svg_files.forEach(svgFile => {
+      const transform = (svgFile as any).transform
+      
+      ctx!.save()
+      
+      if (transform) {
+        const tx = (transform.position_x ?? 0) * coordTransform.scaleX
+        const ty = (transform.position_y ?? 0) * coordTransform.scaleY
+        const sx = transform.scale_x ?? 1
+        const sy = transform.scale_y ?? 1
+        const rot = (transform.rotation ?? 0) * Math.PI / 180
+        
+        ctx!.translate(RULER_SIZE + tx, RULER_SIZE + ty)
+        ctx!.rotate(rot)
+        ctx!.scale(sx, sy)
+      } else {
+        ctx!.translate(RULER_SIZE, RULER_SIZE)
+      }
+      
+      svgFile.paths.forEach((path: any) => {
         if (path.action === 'ignore') return
         if (!path.coordinates || path.coordinates.length === 0) return
 
@@ -172,19 +328,67 @@
         ctx!.beginPath()
         const coords = path.coordinates
         if (coords.length > 0) {
-          const x0 = RULER_SIZE + coords[0][0] * coordTransform.scaleX + coordTransform.offsetX
-          const y0 = RULER_SIZE + coords[0][1] * coordTransform.scaleY + coordTransform.offsetY
+          const x0 = coords[0][0] * coordTransform.scaleX + coordTransform.offsetX
+          const y0 = coords[0][1] * coordTransform.scaleY + coordTransform.offsetY
           ctx!.moveTo(x0, y0)
           
           for (let i = 1; i < coords.length; i++) {
-            const x = RULER_SIZE + coords[i][0] * coordTransform.scaleX + coordTransform.offsetX
-            const y = RULER_SIZE + coords[i][1] * coordTransform.scaleY + coordTransform.offsetY
+            const x = coords[i][0] * coordTransform.scaleX + coordTransform.offsetX
+            const y = coords[i][1] * coordTransform.scaleY + coordTransform.offsetY
             ctx!.lineTo(x, y)
           }
         }
         ctx!.stroke()
         ctx!.globalAlpha = 1.0
       })
+      
+      ctx!.restore()
+      
+      if (selectedSvgId === svgFile.id) {
+        const bbox = calculateBoundingBox(svgFile)
+        
+        ctx!.save()
+        
+        if (transform) {
+          const tx = (transform.position_x ?? 0) * coordTransform.scaleX
+          const ty = (transform.position_y ?? 0) * coordTransform.scaleY
+          const sx = transform.scale_x ?? 1
+          const sy = transform.scale_y ?? 1
+          const rot = (transform.rotation ?? 0) * Math.PI / 180
+          
+          ctx!.translate(RULER_SIZE + tx, RULER_SIZE + ty)
+          ctx!.rotate(rot)
+          ctx!.scale(sx, sy)
+        } else {
+          ctx!.translate(RULER_SIZE, RULER_SIZE)
+        }
+        
+        ctx!.strokeStyle = '#00ff00'
+        ctx!.lineWidth = 2 / zoom
+        ctx!.setLineDash([5 / zoom, 5 / zoom])
+        ctx!.strokeRect(
+          bbox.x * coordTransform.scaleX + coordTransform.offsetX, 
+          bbox.y * coordTransform.scaleY + coordTransform.offsetY, 
+          bbox.width * coordTransform.scaleX, 
+          bbox.height * coordTransform.scaleY
+        )
+        ctx!.setLineDash([])
+        
+        const handleSize = 8 / zoom
+        const corners = [
+          [bbox.x * coordTransform.scaleX + coordTransform.offsetX, bbox.y * coordTransform.scaleY + coordTransform.offsetY],
+          [(bbox.x + bbox.width) * coordTransform.scaleX + coordTransform.offsetX, bbox.y * coordTransform.scaleY + coordTransform.offsetY],
+          [(bbox.x + bbox.width) * coordTransform.scaleX + coordTransform.offsetX, (bbox.y + bbox.height) * coordTransform.scaleY + coordTransform.offsetY],
+          [bbox.x * coordTransform.scaleX + coordTransform.offsetX, (bbox.y + bbox.height) * coordTransform.scaleY + coordTransform.offsetY]
+        ]
+        
+        corners.forEach(([hx, hy]) => {
+          ctx!.fillStyle = '#00ff00'
+          ctx!.fillRect(hx - handleSize/2, hy - handleSize/2, handleSize, handleSize)
+        })
+        
+        ctx!.restore()
+      }
     })
     
     if ($laserPosition) {
@@ -378,6 +582,7 @@
     on:mousemove={handleMouseMove}
     on:mouseup={handleMouseUp}
     on:mouseleave={handleMouseUp}
+    on:click={handleCanvasClick}
   ></canvas>
   
   <div class="zoom-controls">

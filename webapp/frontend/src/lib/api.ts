@@ -17,6 +17,14 @@ export interface SVGFile {
   id: string
   filename: string
   paths: PathConfig[]
+  transform?: {
+    svg_id: string
+    position_x: number
+    position_y: number
+    scale_x: number
+    scale_y: number
+    rotation: number
+  }
 }
 
 export interface PathConfig {

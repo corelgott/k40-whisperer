@@ -8,6 +8,7 @@
   let error = ''
   let newProjectName = ''
   let creating = false
+  let fileInput: HTMLInputElement
 
   onMount(async () => {
     await loadProjects()
@@ -57,10 +58,70 @@
   function selectProject(id: string) {
     selectedProjectId.set(id)
   }
+
+  async function exportProject(id: string, name: string, event: Event) {
+    event.stopPropagation()
+    try {
+      const response = await fetch(`/api/v1/project/projects/${id}/export`)
+      const blob = await response.blob()
+      const url = window.URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `${name}.k40.json.gz`
+      a.click()
+      window.URL.revokeObjectURL(url)
+    } catch (e: any) {
+      error = e.message || 'Fehler beim Exportieren des Projekts'
+    }
+  }
+
+  function importProject() {
+    fileInput.click()
+  }
+
+  async function handleFileUpload(event: Event) {
+    const input = event.target as HTMLInputElement
+    if (!input.files || input.files.length === 0) return
+    
+    const file = input.files[0]
+    const formData = new FormData()
+    formData.append('file', file)
+    
+    try {
+      const response = await fetch('/api/v1/project/projects/import', {
+        method: 'POST',
+        body: formData
+      })
+      
+      if (response.ok) {
+        await loadProjects()
+      } else {
+        const errorData = await response.json()
+        error = errorData.detail || 'Fehler beim Importieren des Projekts'
+      }
+    } catch (e: any) {
+      error = e.message || 'Fehler beim Importieren des Projekts'
+    }
+    
+    input.value = ''
+  }
 </script>
 
+<input 
+  type="file" 
+  accept=".json.gz"
+  bind:this={fileInput}
+  on:change={handleFileUpload}
+  style="display: none"
+/>
+
 <div class="project-list">
-  <h2>Projekte</h2>
+  <div class="header">
+    <h2>Projekte</h2>
+    <button on:click={importProject} class="import-btn">
+      📥 Projekt importieren
+    </button>
+  </div>
   
   {#if error}
     <div class="error">{error}</div>
@@ -92,9 +153,14 @@
             <p>{project.svg_files.length} SVG(s)</p>
             <small>{new Date(project.created_at).toLocaleString('de-DE')}</small>
           </div>
-          <button class="delete-btn" on:click={(e) => deleteProject(project.id, e)}>
-            ×
-          </button>
+          <div class="project-actions">
+            <button class="export-btn" on:click={(e) => exportProject(project.id, project.name, e)} title="Projekt exportieren">
+              💾
+            </button>
+            <button class="delete-btn" on:click={(e) => deleteProject(project.id, e)}>
+              ×
+            </button>
+          </div>
         </div>
       {/each}
     </div>
@@ -108,8 +174,28 @@
     padding: 2rem;
   }
 
-  h2 {
+  .header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
     margin-bottom: 1.5rem;
+  }
+
+  h2 {
+    margin: 0;
+  }
+
+  .import-btn {
+    background-color: #4a6fa5;
+    color: white;
+    border: none;
+    padding: 0.5rem 1rem;
+    cursor: pointer;
+    border-radius: 4px;
+  }
+
+  .import-btn:hover {
+    background-color: #5a7fb5;
   }
 
   .error {
@@ -181,6 +267,29 @@
 
   .project-info small {
     color: #666;
+  }
+
+  .project-actions {
+    display: flex;
+    gap: 0.5rem;
+  }
+
+  .export-btn {
+    background-color: transparent;
+    border: 1px solid #4a6fa5;
+    color: #4a6fa5;
+    width: 2rem;
+    height: 2rem;
+    border-radius: 4px;
+    font-size: 1.2rem;
+    line-height: 1;
+    padding: 0;
+    cursor: pointer;
+  }
+
+  .export-btn:hover {
+    background-color: #4a6fa5;
+    color: white;
   }
 
   .delete-btn {
