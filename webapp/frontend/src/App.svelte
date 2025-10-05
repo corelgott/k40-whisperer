@@ -2,11 +2,26 @@
   import ProjectList from './components/ProjectList.svelte'
   import ProjectEditor from './components/ProjectEditor.svelte'
   import { selectedProjectId } from './lib/stores'
+  import { projectsAPI, type Project } from './lib/api'
+  import { onMount } from 'svelte'
 
   let currentView: 'list' | 'editor' = 'list'
+  let currentProject: Project | null = null
   
   $: if ($selectedProjectId) {
     currentView = 'editor'
+    loadCurrentProject($selectedProjectId)
+  } else {
+    currentProject = null
+  }
+
+  async function loadCurrentProject(id: string) {
+    try {
+      const response = await projectsAPI.get(id)
+      currentProject = response.data
+    } catch (error) {
+      console.error('Failed to load project:', error)
+    }
   }
   
   function backToList() {
@@ -17,7 +32,7 @@
 
 <main>
   <header>
-    <h1>K40 Whisperer Web</h1>
+    <h1>K40 - {currentProject?.name || 'Kein Projekt'}</h1>
     {#if currentView === 'editor'}
       <button on:click={backToList}>← Zurück zur Projektliste</button>
     {/if}

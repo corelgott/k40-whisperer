@@ -6,6 +6,9 @@ export interface Project {
   id: string
   name: string
   created_at: string
+  default_action?: string | null
+  default_speed_mm_s?: number | null
+  default_repetitions?: number | null
   svg_files: SVGFile[]
   virtual_groups: VirtualGroup[]
 }
@@ -19,17 +22,23 @@ export interface SVGFile {
 export interface PathConfig {
   path_id: string
   svg_id: string
-  action: 'ignore' | 'engrave' | 'cut'
-  speed_mm_s: number
-  repetitions: number
+  action?: 'ignore' | 'engrave' | 'cut' | null
+  speed_mm_s?: number | null
+  repetitions?: number | null
   order_index: number
-  virtual_group_id?: string
+  virtual_group_id?: string | null
+  coordinates?: [number, number][]
 }
 
 export interface VirtualGroup {
   id: string
   name: string
+  project_id: string
+  default_action?: string | null
+  default_speed_mm_s?: number | null
+  default_repetitions?: number | null
   order_index: number
+  path_ids: string[]
 }
 
 export const projectsAPI = {
@@ -59,11 +68,29 @@ export const pathAPI = {
 
 export const virtualGroupAPI = {
   create: (projectId: string, name: string) =>
-    axios.post(`${API_BASE}/project/projects/${projectId}/virtual-groups`, { name }),
+    axios.post(`${API_BASE}/project/projects/${projectId}/virtual-groups`, { name, project_id: projectId }),
   delete: (projectId: string, groupId: string) =>
     axios.delete(`${API_BASE}/project/projects/${projectId}/virtual-groups/${groupId}`),
   movePath: (projectId: string, pathId: string, groupId: string | null) =>
     axios.put(`${API_BASE}/project/projects/${projectId}/paths/${pathId}/move`, { virtual_group_id: groupId }),
+  update: (projectId: string, groupId: string, updates: {
+    name?: string
+    default_action?: string | null
+    default_speed_mm_s?: number | null
+    default_repetitions?: number | null
+  }) =>
+    axios.put(`${API_BASE}/project/projects/${projectId}/virtual-groups/${groupId}`, null, { params: updates }),
+  list: (projectId: string) =>
+    axios.get<VirtualGroup[]>(`${API_BASE}/project/projects/${projectId}/virtual-groups`),
+}
+
+export const projectDefaultsAPI = {
+  update: (projectId: string, defaults: {
+    default_action?: string | null
+    default_speed_mm_s?: number | null
+    default_repetitions?: number | null
+  }) =>
+    axios.put(`${API_BASE}/project/projects/${projectId}/defaults`, null, { params: defaults }),
 }
 
 export const laserAPI = {

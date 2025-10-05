@@ -109,24 +109,16 @@
   {:else if project}
     <div class="editor-layout">
       <div class="sidebar">
-        <div class="sidebar-header">
-          <h2>{project.name}</h2>
-          <label class="upload-btn">
-            SVG hochladen
-            <input type="file" accept=".svg" on:change={handleFileUpload} style="display: none;" />
-          </label>
-        </div>
+        <TreeView {project} on:update={() => loadProject($selectedProjectId!)} on:pathSelected />
         
-        <TreeView {project} on:update={() => loadProject($selectedProjectId!)} />
+        <div class="laser-controls-wrapper">
+          <LaserControls />
+        </div>
       </div>
 
       <div class="main-area">
         <div class="stage-container">
           <Stage {project} />
-        </div>
-        
-        <div class="controls-container">
-          <LaserControls />
         </div>
       </div>
     </div>
@@ -168,50 +160,20 @@
     overflow: hidden;
   }
 
-  .sidebar-header {
-    padding: 1rem;
-    border-bottom: 1px solid #333;
-  }
-
-  .sidebar-header h2 {
-    margin: 0 0 1rem 0;
-    font-size: 1.3rem;
-  }
-
-  .upload-btn {
-    display: inline-block;
-    padding: 0.6em 1.2em;
-    background-color: #646cff;
-    color: white;
-    border-radius: 8px;
-    cursor: pointer;
-    font-size: 0.9rem;
-    transition: background-color 0.2s;
-  }
-
-  .upload-btn:hover {
-    background-color: #535bf2;
+  .laser-controls-wrapper {
+    border-top: 1px solid #333;
   }
 
   .main-area {
     flex: 1;
     display: flex;
     flex-direction: column;
-    gap: 1rem;
     overflow: hidden;
   }
 
   .stage-container {
     flex: 1;
     background-color: #0a0a0a;
-    border-radius: 8px;
     overflow: hidden;
-  }
-
-  .controls-container {
-    height: 200px;
-    background-color: #1a1a1a;
-    border-radius: 8px;
-    padding: 1rem;
   }
 </style>
