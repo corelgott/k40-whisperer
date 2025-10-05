@@ -38,6 +38,17 @@ export const projectsAPI = {
   get: (id: string) => axios.get<Project>(`${API_BASE}/project/projects/${id}`),
   delete: (id: string) => axios.delete(`${API_BASE}/project/projects/${id}`),
   history: (id: string) => axios.get(`${API_BASE}/project/projects/${id}/history`),
+  reorderPaths: (projectId: string, pathIds: string[]) =>
+    axios.post(`${API_BASE}/project/projects/${projectId}/paths/reorder`, pathIds),
+  createVirtualGroup: (projectId: string, name: string) =>
+    axios.post(`${API_BASE}/project/projects/${projectId}/virtual-groups`, { 
+      name, 
+      project_id: projectId 
+    }),
+  movePathToGroup: (projectId: string, pathId: string, groupId: string | null) =>
+    axios.put(`${API_BASE}/project/projects/${projectId}/paths/${pathId}/move`, null, {
+      params: { target_group_id: groupId }
+    }),
 }
 
 export const svgAPI = {
