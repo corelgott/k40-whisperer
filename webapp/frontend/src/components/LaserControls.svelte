@@ -2,6 +2,8 @@
   import { laserAPI } from '../lib/api'
   import { selectedProjectId, laserPosition } from '../lib/stores'
 
+  export let compact: boolean = false
+
   let moving = false
   let homing = false
   let executing = false
@@ -58,8 +60,10 @@
   }
 </script>
 
-<div class="laser-controls">
-  <h3>Laser-Steuerung</h3>
+<div class="laser-controls" class:compact>
+  {#if !compact}
+    <h3>Laser-Steuerung</h3>
+  {/if}
 
   {#if error}
     <div class="error">{error}</div>
@@ -95,14 +99,34 @@
 
 <style>
   .laser-controls {
-    height: 100%;
+    padding: 1rem;
     display: flex;
     flex-direction: column;
     gap: 1rem;
+    border-bottom: 1px solid #333;
+  }
+
+  .laser-controls.compact {
+    padding: 0.5rem;
+    gap: 0.5rem;
   }
 
   h3 {
     margin: 0;
+  }
+
+  .laser-controls.compact h3 {
+    font-size: 0.9em;
+  }
+
+  .laser-controls.compact .movement-controls button {
+    width: 2.5rem;
+    height: 2.5rem;
+    font-size: 1.2rem;
+  }
+
+  .laser-controls.compact .action-controls button {
+    font-size: 1.2rem;
   }
 
   .error {

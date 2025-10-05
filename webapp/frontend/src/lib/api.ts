@@ -104,6 +104,23 @@ export const projectDefaultsAPI = {
     axios.put(`${API_BASE}/project/projects/${projectId}/defaults`, null, { params: defaults }),
 }
 
+export const svgTransformAPI = {
+  update: async (projectId: string, svgId: string, transform: {
+    position_x?: number,
+    position_y?: number,
+    scale_x?: number,
+    scale_y?: number,
+    rotation?: number
+  }) => {
+    const params = new URLSearchParams()
+    Object.entries(transform).forEach(([key, value]) => {
+      if (value !== undefined) params.append(key, value.toString())
+    })
+    const response = await axios.put(`${API_BASE}/project/projects/${projectId}/svgs/${svgId}/transform?${params}`)
+    return response.data
+  }
+}
+
 export const laserAPI = {
   move: (dx: number, dy: number) =>
     axios.post(`${API_BASE}/k40/move`, { dx, dy }),

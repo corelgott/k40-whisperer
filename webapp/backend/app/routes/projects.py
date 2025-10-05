@@ -133,19 +133,21 @@ async def get_project(project_id: str):
     svg_files = []
     svgs_dir = project_dir / "svgs"
     config_file = project_dir / "config.json"
-    config_data = json.loads(config_file.read_text()) if config_file.exists() else {"paths": [], "virtual_groups": []}
+    config_data = json.loads(config_file.read_text()) if config_file.exists() else {"paths": [], "virtual_groups": [], "svg_transforms": {}}
     
     if svgs_dir.exists():
         for svg_file in svgs_dir.iterdir():
             if svg_file.suffix == '.svg':
                 svg_id = svg_file.stem
                 svg_paths = [PathConfig(**p) for p in config_data.get("paths", []) if p.get("svg_id") == svg_id]
+                transform = config_data.get("svg_transforms", {}).get(svg_id)
                 svg_files.append({
                     "id": svg_id,
                     "filename": svg_file.name,
                     "project_id": project_id,
                     "paths": [p.model_dump() for p in svg_paths],
-                    "uploaded_at": datetime.fromtimestamp(svg_file.stat().st_mtime).isoformat()
+                    "uploaded_at": datetime.fromtimestamp(svg_file.stat().st_mtime).isoformat(),
+                    "transform": transform
                 })
     
     virtual_groups = [VirtualGroup(**g).model_dump() for g in config_data.get("virtual_groups", [])]
@@ -489,3 +491,161 @@ async def update_virtual_group(
         json.dump(config_data, f, indent=2)
     
     return VirtualGroup(**group)
+
+@router.put("/projects/{project_id}/svgs/{svg_id}/transform")
+async def update_svg_transform(
+    project_id: str,
+    svg_id: str,
+    position_x: Optional[float] = None,
+    position_y: Optional[float] = None,
+    scale_x: Optional[float] = None,
+    scale_y: Optional[float] = None,
+    rotation: Optional[float] = None
+):
+    project_dir = settings.projects_dir / project_id
+    config_file = project_dir / "config.json"
+    
+    if not config_file.exists():
+        raise HTTPException(status_code=404, detail="Project not found")
+    
+    with open(config_file, "r") as f:
+        config_data = json.load(f)
+    
+    if "svg_transforms" not in config_data:
+        config_data["svg_transforms"] = {}
+    
+    if svg_id not in config_data["svg_transforms"]:
+        config_data["svg_transforms"][svg_id] = {
+            "svg_id": svg_id,
+            "position_x": 0.0,
+            "position_y": 0.0,
+            "scale_x": 1.0,
+            "scale_y": 1.0,
+            "rotation": 0.0
+        }
+    
+    transform = config_data["svg_transforms"][svg_id]
+    if position_x is not None:
+        transform["position_x"] = position_x
+    if position_y is not None:
+        transform["position_y"] = position_y
+    if scale_x is not None:
+        transform["scale_x"] = scale_x
+    if scale_y is not None:
+        transform["scale_y"] = scale_y
+    if rotation is not None:
+        transform["rotation"] = rotation
+    
+    with open(config_file, "w") as f:
+        json.dump(config_data, f, indent=2)
+    
+    git_repo = GitRepository(project_dir)
+    git_repo.commit(f"Update SVG transform: {svg_id}")
+    
+    return transform
+
+@router.get("/projects/{project_id}/export")
+async def export_project(project_id: str):
+    """Export project as compressed JSON"""
+    import gzip
+    from fastapi.responses import Response
+    
+    project_dir = settings.projects_dir / project_id
+    if not project_dir.exists():
+        raise HTTPException(status_code=404, detail="Project not found")
+    
+    project_file = project_dir / "project.json"
+    config_file = project_dir / "config.json"
+    
+    project_data = json.loads(project_file.read_text())
+    config_data = json.loads(config_file.read_text()) if config_file.exists() else {}
+    
+    svgs_data = {}
+    svgs_dir = project_dir / "svgs"
+    if svgs_dir.exists():
+        for svg_file in svgs_dir.iterdir():
+            if svg_file.suffix == '.svg':
+                svgs_data[svg_file.name] = svg_file.read_text()
+    
+    export_data = {
+        "version": "1.0",
+        "project": project_data,
+        "config": config_data,
+        "svgs": svgs_data
+    }
+    
+    json_bytes = json.dumps(export_data, indent=2).encode('utf-8')
+    compressed = gzip.compress(json_bytes)
+    
+    filename = f"{project_data['name']}.k40.json.gz"
+    
+    return Response(
+        content=compressed,
+        media_type="application/gzip",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"'
+        }
+    )
+
+@router.post("/projects/import")
+async def import_project(file: UploadFile = File(...)):
+    """Import project from compressed JSON"""
+    import gzip
+    
+    if not file.filename.endswith('.json.gz'):
+        raise HTTPException(status_code=400, detail="File must be a .json.gz file")
+    
+    try:
+        compressed_data = await file.read()
+        json_bytes = gzip.decompress(compressed_data)
+        import_data = json.loads(json_bytes.decode('utf-8'))
+        
+        if "version" not in import_data or "project" not in import_data:
+            raise HTTPException(status_code=400, detail="Invalid project file format")
+        
+        project_data = import_data["project"]
+        config_data = import_data.get("config", {})
+        svgs_data = import_data.get("svgs", {})
+        
+        project_id = str(uuid.uuid4())
+        project_dir = settings.projects_dir / project_id
+        project_dir.mkdir(parents=True, exist_ok=True)
+        
+        svgs_dir = project_dir / "svgs"
+        svgs_dir.mkdir(exist_ok=True)
+        
+        project_data["id"] = project_id
+        project_data["created_at"] = datetime.now().isoformat()
+        project_data["updated_at"] = datetime.now().isoformat()
+        
+        with open(project_dir / "project.json", "w") as f:
+            json.dump(project_data, f, indent=2)
+        
+        with open(project_dir / "config.json", "w") as f:
+            json.dump(config_data, f, indent=2)
+        
+        for svg_filename, svg_content in svgs_data.items():
+            svg_path = svgs_dir / svg_filename
+            svg_path.write_text(svg_content)
+        
+        git_repo = GitRepository(project_dir)
+        git_repo.commit("Import project")
+        
+        return Project(
+            id=project_id,
+            name=project_data["name"],
+            created_at=project_data["created_at"],
+            updated_at=project_data["updated_at"],
+            svg_files=[],
+            virtual_groups=[],
+            default_action=config_data.get("default_action"),
+            default_speed_mm_s=config_data.get("default_speed_mm_s"),
+            default_repetitions=config_data.get("default_repetitions")
+        )
+        
+    except gzip.BadGzipFile:
+        raise HTTPException(status_code=400, detail="Invalid gzip file")
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=400, detail="Invalid JSON in compressed file")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Import failed: {str(e)}")

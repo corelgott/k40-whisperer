@@ -12,6 +12,7 @@
   let positionWs: WebSocket | null = null
   let statusWs: WebSocket | null = null
   let sidebarWidth = 350
+  let sidebarCollapsed = false
   let isResizing = false
 
   $: if ($selectedProjectId) {
@@ -118,6 +119,10 @@
     document.removeEventListener('mousemove', handleResize)
     document.removeEventListener('mouseup', stopResize)
   }
+
+  function toggleSidebar() {
+    sidebarCollapsed = !sidebarCollapsed
+  }
 </script>
 
 <div class="project-editor">
@@ -127,15 +132,19 @@
     <div class="error">{error}</div>
   {:else if project}
     <div class="editor-layout">
-      <div class="sidebar" style="width: {sidebarWidth}px">
-        <TreeView {project} on:update={() => loadProject($selectedProjectId!)} on:pathSelected />
-        
-        <div class="laser-controls-wrapper">
-          <LaserControls />
-        </div>
+      <div class="sidebar" style="width: {sidebarCollapsed ? 40 : sidebarWidth}px">
+        {#if !sidebarCollapsed}
+          <LaserControls compact={true} />
+          <TreeView {project} on:update={() => loadProject($selectedProjectId!)} on:pathSelected />
+        {/if}
+        <button class="collapse-btn" on:click={toggleSidebar} title={sidebarCollapsed ? 'Sidebar ausklappen' : 'Sidebar einklappen'}>
+          {sidebarCollapsed ? '▶' : '◀'}
+        </button>
       </div>
 
-      <div class="resize-handle" on:mousedown={startResize}></div>
+      {#if !sidebarCollapsed}
+        <div class="resize-handle" on:mousedown={startResize}></div>
+      {/if}
 
       <div class="main-area">
         <div class="stage-container">
@@ -178,6 +187,26 @@
     flex-direction: column;
     overflow: hidden;
     flex-shrink: 0;
+    position: relative;
+  }
+
+  .collapse-btn {
+    position: absolute;
+    top: 50%;
+    right: 4px;
+    transform: translateY(-50%);
+    background: #2a2a2a;
+    border: 1px solid #444;
+    color: #e0e0e0;
+    cursor: pointer;
+    padding: 8px 4px;
+    border-radius: 3px;
+    font-size: 12px;
+    z-index: 10;
+  }
+
+  .collapse-btn:hover {
+    background: #333;
   }
 
   .resize-handle {

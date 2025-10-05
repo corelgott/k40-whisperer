@@ -1,7 +1,7 @@
 <script lang="ts">
   import { createEventDispatcher, onMount } from 'svelte'
   import type { Project, SVGFile, PathConfig, VirtualGroup } from '../lib/api'
-  import { pathAPI, virtualGroupAPI, projectDefaultsAPI } from '../lib/api'
+  import { pathAPI, virtualGroupAPI, projectDefaultsAPI, svgTransformAPI } from '../lib/api'
 
   export let project: Project
 
@@ -9,7 +9,6 @@
 
   const STORAGE_KEY = 'k40-tree-collapsed-nodes'
   
-  // Initialize collapsedNodes from localStorage BEFORE first render (not in onMount)
   let collapsedNodes: Set<string> = (() => {
     const stored = localStorage.getItem(STORAGE_KEY)
     if (stored) {
@@ -22,6 +21,7 @@
     return new Set()
   })()
   
+  let expandedTransforms: Set<string> = new Set()
   let fileInput: HTMLInputElement
   let selectedPathId: string | null = null
 
@@ -31,13 +31,21 @@
     } else {
       collapsedNodes.add(nodeId)
     }
-    collapsedNodes = new Set(collapsedNodes)  // Reassign to trigger reactivity
+    collapsedNodes = new Set(collapsedNodes)
     localStorage.setItem(STORAGE_KEY, JSON.stringify([...collapsedNodes]))
   }
 
-  // Pass collapsedNodes as parameter so Svelte tracks the dependency
   function isExpanded(nodeId: string, nodes: Set<string>): boolean {
     return !nodes.has(nodeId)
+  }
+
+  function toggleTransform(svgId: string) {
+    if (expandedTransforms.has(svgId)) {
+      expandedTransforms.delete(svgId)
+    } else {
+      expandedTransforms.add(svgId)
+    }
+    expandedTransforms = new Set(expandedTransforms)
   }
 
   async function updateProjectDefault(field: string, value: any) {
@@ -65,6 +73,15 @@
     } catch (error: any) {
       console.error('Failed to update path config:', error)
       console.error('Error response:', JSON.stringify(error.response?.data, null, 2))
+    }
+  }
+
+  async function updateSvgTransform(svgId: string, field: string, value: number) {
+    try {
+      await svgTransformAPI.update(project.id, svgId, { [field]: value })
+      dispatch('update')
+    } catch (error) {
+      console.error('Failed to update SVG transform:', error)
     }
   }
 
@@ -206,40 +223,60 @@
             <span class="node-name">📁 {group.name}</span>
           </div>
           <div class="col-action">
-            <select
-              value={group.default_action ?? 'default'}
-              on:change={(e) => {
-                const val = e.currentTarget.value === 'default' || e.currentTarget.value === '' ? null : e.currentTarget.value
-                updateGroupDefault(group.id, 'default_action', val)
-              }}
-            >
-              <option value="default">⚙️ Default</option>
-              <option value="cut">✂️ Cut</option>
-              <option value="engrave">🔨 Engrave</option>
-              <option value="ignore">⊘ Ignore</option>
-            </select>
+            <div class="action-buttons">
+              <button
+                class="action-btn"
+                class:active={group.default_action === null || group.default_action === undefined}
+                title="Inherit from project"
+                on:click={() => updateGroupDefault(group.id, 'default_action', null)}
+              >⬆️</button>
+              <button
+                class="action-btn"
+                class:active={group.default_action === 'cut'}
+                title="Cut"
+                on:click={() => updateGroupDefault(group.id, 'default_action', 'cut')}
+              >✂️</button>
+              <button
+                class="action-btn"
+                class:active={group.default_action === 'engrave'}
+                title="Engrave"
+                on:click={() => updateGroupDefault(group.id, 'default_action', 'engrave')}
+              >🔨</button>
+              <button
+                class="action-btn"
+                class:active={group.default_action === 'ignore'}
+                title="Ignore"
+                on:click={() => updateGroupDefault(group.id, 'default_action', 'ignore')}
+              >⊘</button>
+            </div>
           </div>
-          <div class="col-speed">
-            <input
-              type="number"
-              placeholder="default"
-              value={group.default_speed_mm_s ?? ''}
-              min="0.1"
-              max="500"
-              step="0.1"
-              on:change={(e) => updateGroupDefault(group.id, 'default_speed_mm_s', e.currentTarget.value ? parseFloat(e.currentTarget.value) : null)}
-            />
-          </div>
-          <div class="col-reps">
-            <input
-              type="number"
-              placeholder="default"
-              value={group.default_repetitions ?? ''}
-              min="1"
-              max="100"
-              on:change={(e) => updateGroupDefault(group.id, 'default_repetitions', e.currentTarget.value ? parseInt(e.currentTarget.value) : null)}
-            />
-          </div>
+          {#if group.default_action !== null && group.default_action !== undefined}
+            <div class="col-speed">
+              <input
+                type="number"
+                placeholder="⬆️"
+                value={group.default_speed_mm_s ?? ''}
+                min="0.1"
+                max="500"
+                step="0.1"
+                on:change={(e) => updateGroupDefault(group.id, 'default_speed_mm_s', e.currentTarget.value ? parseFloat(e.currentTarget.value) : null)}
+              />
+            </div>
+            <div class="col-reps">
+              <input
+                type="number"
+                placeholder="⬆️"
+                value={group.default_repetitions ?? ''}
+                min="1"
+                max="100"
+                on:change={(e) => updateGroupDefault(group.id, 'default_repetitions', e.currentTarget.value ? parseInt(e.currentTarget.value) : null)}
+              />
+            </div>
+          {:else}
+            <div class="col-speed"></div>
+            <div class="col-reps"></div>
+          {/if}
+          <div class="col-gear"></div>
         </div>
 
         {#if isExpanded(`group-${group.id}`, collapsedNodes)}
@@ -255,40 +292,62 @@
                 <span class="node-name">🔹 {path.path_id}</span>
               </div>
               <div class="col-action">
-                <select
-                  value={path.action ?? 'default'}
-                  on:change={(e) => {
-                    const val = e.currentTarget.value === 'default' || e.currentTarget.value === '' ? null : e.currentTarget.value
-                    updatePathConfig(path.path_id, 'action', val)
-                  }}
-                >
-                  <option value="default">⚙️ Default</option>
-                  <option value="cut">✂️ Cut</option>
-                  <option value="engrave">🔨 Engrave</option>
-                  <option value="ignore">⊘ Ignore</option>
-                </select>
+                <div class="action-buttons">
+                  <button
+                    class="action-btn"
+                    class:active={path.action === null || path.action === undefined}
+                    title="Inherit from group"
+                    on:click|stopPropagation={() => updatePathConfig(path.path_id, 'action', null)}
+                  >⬆️</button>
+                  <button
+                    class="action-btn"
+                    class:active={path.action === 'cut'}
+                    title="Cut"
+                    on:click|stopPropagation={() => updatePathConfig(path.path_id, 'action', 'cut')}
+                  >✂️</button>
+                  <button
+                    class="action-btn"
+                    class:active={path.action === 'engrave'}
+                    title="Engrave"
+                    on:click|stopPropagation={() => updatePathConfig(path.path_id, 'action', 'engrave')}
+                  >🔨</button>
+                  <button
+                    class="action-btn"
+                    class:active={path.action === 'ignore'}
+                    title="Ignore"
+                    on:click|stopPropagation={() => updatePathConfig(path.path_id, 'action', 'ignore')}
+                  >⊘</button>
+                </div>
               </div>
-              <div class="col-speed">
-                <input
-                  type="number"
-                  placeholder="default"
-                  value={path.speed_mm_s ?? ''}
-                  min="0.1"
-                  max="500"
-                  step="0.1"
-                  on:change={(e) => updatePathConfig(path.path_id, 'speed_mm_s', e.currentTarget.value ? parseFloat(e.currentTarget.value) : null)}
-                />
-              </div>
-              <div class="col-reps">
-                <input
-                  type="number"
-                  placeholder="default"
-                  value={path.repetitions ?? ''}
-                  min="1"
-                  max="100"
-                  on:change={(e) => updatePathConfig(path.path_id, 'repetitions', e.currentTarget.value ? parseInt(e.currentTarget.value) : null)}
-                />
-              </div>
+              {#if path.action !== null && path.action !== undefined}
+                <div class="col-speed">
+                  <input
+                    type="number"
+                    placeholder="⬆️"
+                    value={path.speed_mm_s ?? ''}
+                    min="0.1"
+                    max="500"
+                    step="0.1"
+                    on:click|stopPropagation
+                    on:change={(e) => updatePathConfig(path.path_id, 'speed_mm_s', e.currentTarget.value ? parseFloat(e.currentTarget.value) : null)}
+                  />
+                </div>
+                <div class="col-reps">
+                  <input
+                    type="number"
+                    placeholder="⬆️"
+                    value={path.repetitions ?? ''}
+                    min="1"
+                    max="100"
+                    on:click|stopPropagation
+                    on:change={(e) => updatePathConfig(path.path_id, 'repetitions', e.currentTarget.value ? parseInt(e.currentTarget.value) : null)}
+                  />
+                </div>
+              {:else}
+                <div class="col-speed"></div>
+                <div class="col-reps"></div>
+              {/if}
+              <div class="col-gear"></div>
             </div>
           {/each}
         {/if}
@@ -304,7 +363,60 @@
           <div class="col-action"></div>
           <div class="col-speed"></div>
           <div class="col-reps"></div>
+          <div class="col-gear">
+            <button 
+              class="gear-btn" 
+              class:active={expandedTransforms.has(svgFile.id)}
+              on:click={() => toggleTransform(svgFile.id)}
+              title="Transform settings"
+            >⚙️</button>
+          </div>
         </div>
+        
+        {#if expandedTransforms.has(svgFile.id)}
+          <div class="tree-row tree-row-transform" style="padding-left: 40px">
+            <div class="col-handle"></div>
+            <div class="transform-controls">
+              <label>
+                X: <input 
+                  type="number" 
+                  value={svgFile.transform?.position_x ?? 0} 
+                  step="0.1"
+                  on:change={(e) => updateSvgTransform(svgFile.id, 'position_x', parseFloat(e.currentTarget.value))}
+                />
+              </label>
+              <label>
+                Y: <input 
+                  type="number" 
+                  value={svgFile.transform?.position_y ?? 0} 
+                  step="0.1"
+                  on:change={(e) => updateSvgTransform(svgFile.id, 'position_y', parseFloat(e.currentTarget.value))}
+                />
+              </label>
+              <label>
+                Scale: <input 
+                  type="number" 
+                  value={svgFile.transform?.scale_x ?? 1.0} 
+                  step="0.01"
+                  min="0.01"
+                  on:change={(e) => {
+                    const val = parseFloat(e.currentTarget.value)
+                    updateSvgTransform(svgFile.id, 'scale_x', val)
+                    updateSvgTransform(svgFile.id, 'scale_y', val)
+                  }}
+                />
+              </label>
+              <label>
+                Rotation: <input 
+                  type="number" 
+                  value={svgFile.transform?.rotation ?? 0} 
+                  step="1"
+                  on:change={(e) => updateSvgTransform(svgFile.id, 'rotation', parseFloat(e.currentTarget.value))}
+                /> °
+              </label>
+            </div>
+          </div>
+        {/if}
 
         {#if isExpanded(`svg-${svgFile.id}`, collapsedNodes)}
           {#each svgFile.paths as path}
@@ -320,40 +432,62 @@
                   <span class="node-name">🔹 {path.path_id}</span>
                 </div>
                 <div class="col-action">
-                  <select
-                    value={path.action ?? 'default'}
-                    on:change={(e) => {
-                      const val = e.currentTarget.value === 'default' || e.currentTarget.value === '' ? null : e.currentTarget.value
-                      updatePathConfig(path.path_id, 'action', val)
-                    }}
-                  >
-                    <option value="default">⚙️ Default</option>
-                    <option value="cut">✂️ Cut</option>
-                    <option value="engrave">🔨 Engrave</option>
-                    <option value="ignore">⊘ Ignore</option>
-                  </select>
+                  <div class="action-buttons">
+                    <button
+                      class="action-btn"
+                      class:active={path.action === null || path.action === undefined}
+                      title="Inherit from project"
+                      on:click|stopPropagation={() => updatePathConfig(path.path_id, 'action', null)}
+                    >⬆️</button>
+                    <button
+                      class="action-btn"
+                      class:active={path.action === 'cut'}
+                      title="Cut"
+                      on:click|stopPropagation={() => updatePathConfig(path.path_id, 'action', 'cut')}
+                    >✂️</button>
+                    <button
+                      class="action-btn"
+                      class:active={path.action === 'engrave'}
+                      title="Engrave"
+                      on:click|stopPropagation={() => updatePathConfig(path.path_id, 'action', 'engrave')}
+                    >🔨</button>
+                    <button
+                      class="action-btn"
+                      class:active={path.action === 'ignore'}
+                      title="Ignore"
+                      on:click|stopPropagation={() => updatePathConfig(path.path_id, 'action', 'ignore')}
+                    >⊘</button>
+                  </div>
                 </div>
-                <div class="col-speed">
-                  <input
-                    type="number"
-                    placeholder="default"
-                    value={path.speed_mm_s ?? ''}
-                    min="0.1"
-                    max="500"
-                    step="0.1"
-                    on:change={(e) => updatePathConfig(path.path_id, 'speed_mm_s', e.currentTarget.value ? parseFloat(e.currentTarget.value) : null)}
-                  />
-                </div>
-                <div class="col-reps">
-                  <input
-                    type="number"
-                    placeholder="default"
-                    value={path.repetitions ?? ''}
-                    min="1"
-                    max="100"
-                    on:change={(e) => updatePathConfig(path.path_id, 'repetitions', e.currentTarget.value ? parseInt(e.currentTarget.value) : null)}
-                  />
-                </div>
+                {#if path.action !== null && path.action !== undefined}
+                  <div class="col-speed">
+                    <input
+                      type="number"
+                      placeholder="⬆️"
+                      value={path.speed_mm_s ?? ''}
+                      min="0.1"
+                      max="500"
+                      step="0.1"
+                      on:click|stopPropagation
+                      on:change={(e) => updatePathConfig(path.path_id, 'speed_mm_s', e.currentTarget.value ? parseFloat(e.currentTarget.value) : null)}
+                    />
+                  </div>
+                  <div class="col-reps">
+                    <input
+                      type="number"
+                      placeholder="⬆️"
+                      value={path.repetitions ?? ''}
+                      min="1"
+                      max="100"
+                      on:click|stopPropagation
+                      on:change={(e) => updatePathConfig(path.path_id, 'repetitions', e.currentTarget.value ? parseInt(e.currentTarget.value) : null)}
+                    />
+                  </div>
+                {:else}
+                  <div class="col-speed"></div>
+                  <div class="col-reps"></div>
+                {/if}
+                <div class="col-gear"></div>
               </div>
             {/if}
           {/each}
@@ -405,7 +539,7 @@
 
   .tree-row {
     display: grid;
-    grid-template-columns: 30px 1fr 120px 80px 60px;
+    grid-template-columns: 30px 1fr 160px 80px 60px 30px;
     gap: 4px;
     align-items: center;
     padding: 4px 8px;
@@ -475,14 +609,86 @@
     text-overflow: ellipsis;
   }
 
-  .col-action select {
-    width: 100%;
+  .action-buttons {
+    display: flex;
+    gap: 2px;
+  }
+
+  .action-btn {
+    padding: 2px 6px;
+    background: #2a2a2a;
+    border: 1px solid #444;
+    color: #e0e0e0;
+    cursor: pointer;
+    border-radius: 3px;
+    font-size: 14px;
+    transition: background 0.2s;
+    flex: 1;
+  }
+
+  .action-btn:hover {
+    background: #333;
+  }
+
+  .action-btn.active {
+    background: #4a6fa5;
+    border-color: #6a8fc5;
+  }
+
+  .col-gear {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+  }
+
+  .gear-btn {
+    padding: 2px 6px;
+    background: transparent;
+    border: 1px solid transparent;
+    color: #888;
+    cursor: pointer;
+    border-radius: 3px;
+    font-size: 14px;
+  }
+
+  .gear-btn:hover {
+    color: #e0e0e0;
+    border-color: #444;
+  }
+
+  .gear-btn.active {
+    background: #2a2a2a;
+    border-color: #4a6fa5;
+    color: #e0e0e0;
+  }
+
+  .tree-row-transform {
     background: #1a1a1a;
+    padding: 8px;
+  }
+
+  .transform-controls {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    flex-wrap: wrap;
+    grid-column: 2 / -1;
+  }
+
+  .transform-controls label {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 12px;
+  }
+
+  .transform-controls input {
+    width: 70px;
+    background: #2a2a2a;
     color: #e0e0e0;
     border: 1px solid #444;
     padding: 2px 4px;
     border-radius: 3px;
-    font-size: 12px;
   }
 
   .col-speed input,
