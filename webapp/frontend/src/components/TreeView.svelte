@@ -24,6 +24,35 @@
   let expandedTransforms: Set<string> = new Set()
   let fileInput: HTMLInputElement
   let selectedPathId: string | null = null
+  let openActionDropdown: string | null = null
+
+  function getActionSymbol(action: string | null | undefined): string {
+    if (action === null || action === undefined) return '⬆️'
+    if (action === 'cut') return '✂️'
+    if (action === 'engrave') return '🔨'
+    if (action === 'ignore') return '⊘'
+    return '⬆️'
+  }
+
+  function getActionTitle(action: string | null | undefined): string {
+    if (action === null || action === undefined) return 'Inherit'
+    if (action === 'cut') return 'Cut'
+    if (action === 'engrave') return 'Engrave'
+    if (action === 'ignore') return 'Ignore'
+    return 'Inherit'
+  }
+
+  function toggleActionDropdown(id: string) {
+    if (openActionDropdown === id) {
+      openActionDropdown = null
+    } else {
+      openActionDropdown = id
+    }
+  }
+
+  function closeActionDropdown() {
+    openActionDropdown = null
+  }
 
   function toggleExpand(nodeId: string) {
     if (collapsedNodes.has(nodeId)) {
@@ -152,7 +181,16 @@
       svg.paths.filter(p => p.virtual_group_id === groupId)
     )
   }
+
+  function handleClickOutside(event: MouseEvent) {
+    const target = event.target as HTMLElement
+    if (!target.closest('.action-dropdown')) {
+      closeActionDropdown()
+    }
+  }
 </script>
+
+<svelte:window on:click={handleClickOutside} />
 
 <div class="tree-container" on:drop={handleDrop} on:dragover={handleDragOver}>
   <div class="tree-header">
@@ -184,14 +222,39 @@
         <span class="node-name">{project.name}</span>
       </div>
       <div class="col-action">
-        <select
-          value={project.default_action || 'cut'}
-          on:change={(e) => updateProjectDefault('default_action', e.currentTarget.value)}
-        >
-          <option value="cut">✂️ Cut</option>
-          <option value="engrave">🔨 Engrave</option>
-          <option value="ignore">⊘ Ignore</option>
-        </select>
+        <div class="action-dropdown">
+          <button 
+            class="action-dropdown-btn"
+            on:click={() => toggleActionDropdown('project')}
+            title={getActionTitle(project.default_action)}
+          >
+            {getActionSymbol(project.default_action)}
+          </button>
+          {#if openActionDropdown === 'project'}
+            <div class="action-dropdown-menu">
+              <button 
+                class="action-dropdown-item"
+                class:active={project.default_action === null || project.default_action === undefined}
+                on:click={() => { updateProjectDefault('default_action', null); closeActionDropdown() }}
+              >⬆️ Inherit</button>
+              <button 
+                class="action-dropdown-item"
+                class:active={project.default_action === 'cut'}
+                on:click={() => { updateProjectDefault('default_action', 'cut'); closeActionDropdown() }}
+              >✂️ Cut</button>
+              <button 
+                class="action-dropdown-item"
+                class:active={project.default_action === 'engrave'}
+                on:click={() => { updateProjectDefault('default_action', 'engrave'); closeActionDropdown() }}
+              >🔨 Engrave</button>
+              <button 
+                class="action-dropdown-item"
+                class:active={project.default_action === 'ignore'}
+                on:click={() => { updateProjectDefault('default_action', 'ignore'); closeActionDropdown() }}
+              >⊘ Ignore</button>
+            </div>
+          {/if}
+        </div>
       </div>
       <div class="col-speed">
         <input
@@ -223,31 +286,38 @@
             <span class="node-name">📁 {group.name}</span>
           </div>
           <div class="col-action">
-            <div class="action-buttons">
-              <button
-                class="action-btn"
-                class:active={group.default_action === null || group.default_action === undefined}
-                title="Inherit from project"
-                on:click={() => updateGroupDefault(group.id, 'default_action', null)}
-              >⬆️</button>
-              <button
-                class="action-btn"
-                class:active={group.default_action === 'cut'}
-                title="Cut"
-                on:click={() => updateGroupDefault(group.id, 'default_action', 'cut')}
-              >✂️</button>
-              <button
-                class="action-btn"
-                class:active={group.default_action === 'engrave'}
-                title="Engrave"
-                on:click={() => updateGroupDefault(group.id, 'default_action', 'engrave')}
-              >🔨</button>
-              <button
-                class="action-btn"
-                class:active={group.default_action === 'ignore'}
-                title="Ignore"
-                on:click={() => updateGroupDefault(group.id, 'default_action', 'ignore')}
-              >⊘</button>
+            <div class="action-dropdown">
+              <button 
+                class="action-dropdown-btn"
+                on:click={() => toggleActionDropdown(`group-${group.id}`)}
+                title={getActionTitle(group.default_action)}
+              >
+                {getActionSymbol(group.default_action)}
+              </button>
+              {#if openActionDropdown === `group-${group.id}`}
+                <div class="action-dropdown-menu">
+                  <button 
+                    class="action-dropdown-item"
+                    class:active={group.default_action === null || group.default_action === undefined}
+                    on:click={() => { updateGroupDefault(group.id, 'default_action', null); closeActionDropdown() }}
+                  >⬆️ Inherit</button>
+                  <button 
+                    class="action-dropdown-item"
+                    class:active={group.default_action === 'cut'}
+                    on:click={() => { updateGroupDefault(group.id, 'default_action', 'cut'); closeActionDropdown() }}
+                  >✂️ Cut</button>
+                  <button 
+                    class="action-dropdown-item"
+                    class:active={group.default_action === 'engrave'}
+                    on:click={() => { updateGroupDefault(group.id, 'default_action', 'engrave'); closeActionDropdown() }}
+                  >🔨 Engrave</button>
+                  <button 
+                    class="action-dropdown-item"
+                    class:active={group.default_action === 'ignore'}
+                    on:click={() => { updateGroupDefault(group.id, 'default_action', 'ignore'); closeActionDropdown() }}
+                  >⊘ Ignore</button>
+                </div>
+              {/if}
             </div>
           </div>
           {#if group.default_action !== null && group.default_action !== undefined}
@@ -292,31 +362,38 @@
                 <span class="node-name">🔹 {path.path_id}</span>
               </div>
               <div class="col-action">
-                <div class="action-buttons">
-                  <button
-                    class="action-btn"
-                    class:active={path.action === null || path.action === undefined}
-                    title="Inherit from group"
-                    on:click|stopPropagation={() => updatePathConfig(path.path_id, 'action', null)}
-                  >⬆️</button>
-                  <button
-                    class="action-btn"
-                    class:active={path.action === 'cut'}
-                    title="Cut"
-                    on:click|stopPropagation={() => updatePathConfig(path.path_id, 'action', 'cut')}
-                  >✂️</button>
-                  <button
-                    class="action-btn"
-                    class:active={path.action === 'engrave'}
-                    title="Engrave"
-                    on:click|stopPropagation={() => updatePathConfig(path.path_id, 'action', 'engrave')}
-                  >🔨</button>
-                  <button
-                    class="action-btn"
-                    class:active={path.action === 'ignore'}
-                    title="Ignore"
-                    on:click|stopPropagation={() => updatePathConfig(path.path_id, 'action', 'ignore')}
-                  >⊘</button>
+                <div class="action-dropdown">
+                  <button 
+                    class="action-dropdown-btn"
+                    on:click|stopPropagation={() => toggleActionDropdown(`group-path-${path.path_id}`)}
+                    title={getActionTitle(path.action)}
+                  >
+                    {getActionSymbol(path.action)}
+                  </button>
+                  {#if openActionDropdown === `group-path-${path.path_id}`}
+                    <div class="action-dropdown-menu">
+                      <button 
+                        class="action-dropdown-item"
+                        class:active={path.action === null || path.action === undefined}
+                        on:click|stopPropagation={() => { updatePathConfig(path.path_id, 'action', null); closeActionDropdown() }}
+                      >⬆️ Inherit</button>
+                      <button 
+                        class="action-dropdown-item"
+                        class:active={path.action === 'cut'}
+                        on:click|stopPropagation={() => { updatePathConfig(path.path_id, 'action', 'cut'); closeActionDropdown() }}
+                      >✂️ Cut</button>
+                      <button 
+                        class="action-dropdown-item"
+                        class:active={path.action === 'engrave'}
+                        on:click|stopPropagation={() => { updatePathConfig(path.path_id, 'action', 'engrave'); closeActionDropdown() }}
+                      >🔨 Engrave</button>
+                      <button 
+                        class="action-dropdown-item"
+                        class:active={path.action === 'ignore'}
+                        on:click|stopPropagation={() => { updatePathConfig(path.path_id, 'action', 'ignore'); closeActionDropdown() }}
+                      >⊘ Ignore</button>
+                    </div>
+                  {/if}
                 </div>
               </div>
               {#if path.action !== null && path.action !== undefined}
@@ -432,31 +509,38 @@
                   <span class="node-name">🔹 {path.path_id}</span>
                 </div>
                 <div class="col-action">
-                  <div class="action-buttons">
-                    <button
-                      class="action-btn"
-                      class:active={path.action === null || path.action === undefined}
-                      title="Inherit from project"
-                      on:click|stopPropagation={() => updatePathConfig(path.path_id, 'action', null)}
-                    >⬆️</button>
-                    <button
-                      class="action-btn"
-                      class:active={path.action === 'cut'}
-                      title="Cut"
-                      on:click|stopPropagation={() => updatePathConfig(path.path_id, 'action', 'cut')}
-                    >✂️</button>
-                    <button
-                      class="action-btn"
-                      class:active={path.action === 'engrave'}
-                      title="Engrave"
-                      on:click|stopPropagation={() => updatePathConfig(path.path_id, 'action', 'engrave')}
-                    >🔨</button>
-                    <button
-                      class="action-btn"
-                      class:active={path.action === 'ignore'}
-                      title="Ignore"
-                      on:click|stopPropagation={() => updatePathConfig(path.path_id, 'action', 'ignore')}
-                    >⊘</button>
+                  <div class="action-dropdown">
+                    <button 
+                      class="action-dropdown-btn"
+                      on:click|stopPropagation={() => toggleActionDropdown(`path-${path.path_id}`)}
+                      title={getActionTitle(path.action)}
+                    >
+                      {getActionSymbol(path.action)}
+                    </button>
+                    {#if openActionDropdown === `path-${path.path_id}`}
+                      <div class="action-dropdown-menu">
+                        <button 
+                          class="action-dropdown-item"
+                          class:active={path.action === null || path.action === undefined}
+                          on:click|stopPropagation={() => { updatePathConfig(path.path_id, 'action', null); closeActionDropdown() }}
+                        >⬆️ Inherit</button>
+                        <button 
+                          class="action-dropdown-item"
+                          class:active={path.action === 'cut'}
+                          on:click|stopPropagation={() => { updatePathConfig(path.path_id, 'action', 'cut'); closeActionDropdown() }}
+                        >✂️ Cut</button>
+                        <button 
+                          class="action-dropdown-item"
+                          class:active={path.action === 'engrave'}
+                          on:click|stopPropagation={() => { updatePathConfig(path.path_id, 'action', 'engrave'); closeActionDropdown() }}
+                        >🔨 Engrave</button>
+                        <button 
+                          class="action-dropdown-item"
+                          class:active={path.action === 'ignore'}
+                          on:click|stopPropagation={() => { updatePathConfig(path.path_id, 'action', 'ignore'); closeActionDropdown() }}
+                        >⊘ Ignore</button>
+                      </div>
+                    {/if}
                   </div>
                 </div>
                 {#if path.action !== null && path.action !== undefined}
@@ -609,30 +693,68 @@
     text-overflow: ellipsis;
   }
 
-  .action-buttons {
-    display: flex;
-    gap: 2px;
+  .action-dropdown {
+    position: relative;
+    display: inline-block;
   }
 
-  .action-btn {
-    padding: 2px 6px;
+  .action-dropdown-btn {
+    padding: 4px 8px;
     background: #2a2a2a;
     border: 1px solid #444;
     color: #e0e0e0;
     cursor: pointer;
     border-radius: 3px;
-    font-size: 14px;
+    font-size: 16px;
+    min-width: 40px;
     transition: background 0.2s;
-    flex: 1;
   }
 
-  .action-btn:hover {
+  .action-dropdown-btn:hover {
+    background: #333;
+    border-color: #555;
+  }
+
+  .action-dropdown-menu {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    background: #2a2a2a;
+    border: 1px solid #444;
+    border-radius: 4px;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+    z-index: 1000;
+    min-width: 120px;
+    margin-top: 2px;
+  }
+
+  .action-dropdown-item {
+    display: block;
+    width: 100%;
+    padding: 6px 12px;
+    background: transparent;
+    border: none;
+    color: #e0e0e0;
+    cursor: pointer;
+    text-align: left;
+    font-size: 13px;
+    transition: background 0.2s;
+  }
+
+  .action-dropdown-item:hover {
     background: #333;
   }
 
-  .action-btn.active {
+  .action-dropdown-item.active {
     background: #4a6fa5;
-    border-color: #6a8fc5;
+  }
+
+  .action-dropdown-item:first-child {
+    border-radius: 4px 4px 0 0;
+  }
+
+  .action-dropdown-item:last-child {
+    border-radius: 0 0 4px 4px;
   }
 
   .col-gear {
