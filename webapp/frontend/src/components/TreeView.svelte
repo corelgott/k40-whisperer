@@ -59,8 +59,9 @@
     try {
       await pathAPI.update(project.id, pathId, { [field]: value })
       dispatch('update')
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to update path config:', error)
+      console.error('Error response:', JSON.stringify(error.response?.data, null, 2))
     }
   }
 
@@ -204,7 +205,10 @@
           <div class="col-action">
             <select
               value={group.default_action ?? 'default'}
-              on:change={(e) => updateGroupDefault(group.id, 'default_action', e.currentTarget.value === 'default' ? null : e.currentTarget.value)}
+              on:change={(e) => {
+                const val = e.currentTarget.value === 'default' || e.currentTarget.value === '' ? null : e.currentTarget.value
+                updateGroupDefault(group.id, 'default_action', val)
+              }}
             >
               <option value="default">⚙️ Default</option>
               <option value="cut">✂️ Cut</option>
@@ -250,7 +254,10 @@
               <div class="col-action">
                 <select
                   value={path.action ?? 'default'}
-                  on:change={(e) => updatePathConfig(path.path_id, 'action', e.currentTarget.value === 'default' ? null : e.currentTarget.value)}
+                  on:change={(e) => {
+                    const val = e.currentTarget.value === 'default' || e.currentTarget.value === '' ? null : e.currentTarget.value
+                    updatePathConfig(path.path_id, 'action', val)
+                  }}
                 >
                   <option value="default">⚙️ Default</option>
                   <option value="cut">✂️ Cut</option>
@@ -312,7 +319,10 @@
                 <div class="col-action">
                   <select
                     value={path.action ?? 'default'}
-                    on:change={(e) => updatePathConfig(path.path_id, 'action', e.currentTarget.value === 'default' ? null : e.currentTarget.value)}
+                    on:change={(e) => {
+                      const val = e.currentTarget.value === 'default' || e.currentTarget.value === '' ? null : e.currentTarget.value
+                      updatePathConfig(path.path_id, 'action', val)
+                    }}
                   >
                     <option value="default">⚙️ Default</option>
                     <option value="cut">✂️ Cut</option>

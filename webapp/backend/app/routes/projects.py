@@ -156,7 +156,10 @@ async def get_project(project_id: str):
         created_at=project_data["created_at"],
         updated_at=project_data["updated_at"],
         svg_files=svg_files,
-        virtual_groups=virtual_groups
+        virtual_groups=virtual_groups,
+        default_action=config_data.get("default_action"),
+        default_speed_mm_s=config_data.get("default_speed_mm_s"),
+        default_repetitions=config_data.get("default_repetitions")
     )
 
 @router.delete("/projects/{project_id}", status_code=status.HTTP_204_NO_CONTENT)
