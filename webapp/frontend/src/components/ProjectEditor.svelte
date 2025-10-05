@@ -11,6 +11,8 @@
   let error = ''
   let positionWs: WebSocket | null = null
   let statusWs: WebSocket | null = null
+  let sidebarWidth = 350
+  let isResizing = false
 
   $: if ($selectedProjectId) {
     loadProject($selectedProjectId)
@@ -99,6 +101,23 @@
       error = e.message || 'Fehler beim Hochladen der SVG-Datei'
     }
   }
+
+  function startResize() {
+    isResizing = true
+    document.addEventListener('mousemove', handleResize)
+    document.addEventListener('mouseup', stopResize)
+  }
+
+  function handleResize(e: MouseEvent) {
+    if (!isResizing) return
+    sidebarWidth = Math.max(250, Math.min(600, e.clientX))
+  }
+
+  function stopResize() {
+    isResizing = false
+    document.removeEventListener('mousemove', handleResize)
+    document.removeEventListener('mouseup', stopResize)
+  }
 </script>
 
 <div class="project-editor">
@@ -108,13 +127,15 @@
     <div class="error">{error}</div>
   {:else if project}
     <div class="editor-layout">
-      <div class="sidebar">
+      <div class="sidebar" style="width: {sidebarWidth}px">
         <TreeView {project} on:update={() => loadProject($selectedProjectId!)} on:pathSelected />
         
         <div class="laser-controls-wrapper">
           <LaserControls />
         </div>
       </div>
+
+      <div class="resize-handle" on:mousedown={startResize}></div>
 
       <div class="main-area">
         <div class="stage-container">
@@ -152,12 +173,22 @@
   }
 
   .sidebar {
-    width: 350px;
     background-color: #1a1a1a;
-    border-right: 1px solid #333;
     display: flex;
     flex-direction: column;
     overflow: hidden;
+    flex-shrink: 0;
+  }
+
+  .resize-handle {
+    width: 4px;
+    background-color: #333;
+    cursor: col-resize;
+    flex-shrink: 0;
+  }
+
+  .resize-handle:hover {
+    background-color: #555;
   }
 
   .laser-controls-wrapper {
