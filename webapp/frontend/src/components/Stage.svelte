@@ -5,8 +5,8 @@
 
   export let project: Project
 
-  let canvas: HTMLCanvasElement
-  let ctx: CanvasRenderingContext2D | null
+  let canvas: HTMLCanvasElement | undefined
+  let ctx: CanvasRenderingContext2D | null = null
   let zoom = 1.0
   let panX = 0
   let panY = 0
@@ -19,11 +19,19 @@
   const RULER_SIZE = 30
 
   onMount(() => {
-    ctx = canvas.getContext('2d')
-    drawStage()
+    if (canvas) {
+      ctx = canvas.getContext('2d')
+      drawStage()
+    }
   })
 
-  $: if (ctx) {
+  onDestroy(() => {
+    if (animationFrameId !== null) {
+      cancelAnimationFrame(animationFrameId)
+    }
+  })
+
+  $: if (ctx && project) {
     drawStage()
   }
 
@@ -77,112 +85,248 @@
     drawStage()
   }
 
-  function drawStage() {
-    if (!ctx || !canvas) return
+  let coordTransform = { scaleX: 1, scaleY: 1, offsetX: 0, offsetY: 0 }
+  
+  $: if (project && project.svg_files) {
+    const allCoords: Array<[number, number]> = []
+    project.svg_files.forEach(svg => {
+      svg.paths.forEach(path => {
+        if (path.action !== 'ignore' && path.coordinates && path.coordinates.length > 0) {
+          allCoords.push(...path.coordinates)
+        }
+      })
+    })
 
+    if (allCoords.length > 0) {
+      const xs = allCoords.map(c => c[0])
+      const ys = allCoords.map(c => c[1])
+      const minX = Math.min(...xs)
+      const maxX = Math.max(...xs)
+      const minY = Math.min(...ys)
+      const maxY = Math.max(...ys)
+      
+      const svgWidth = maxX - minX
+      const svgHeight = maxY - minY
+      
+      const padding = 20
+      const scaleX = (WORK_AREA_WIDTH - 2 * padding) / svgWidth
+      const scaleY = (WORK_AREA_HEIGHT - 2 * padding) / svgHeight
+      const scale = Math.min(scaleX, scaleY)
+      
+      const scaledWidth = svgWidth * scale
+      const scaledHeight = svgHeight * scale
+      const offsetX = (WORK_AREA_WIDTH - scaledWidth) / 2 - minX * scale
+      const offsetY = (WORK_AREA_HEIGHT - scaledHeight) / 2 - minY * scale
+      
+      coordTransform = { scaleX: scale, scaleY: scale, offsetX, offsetY }
+    }
+  }
+
+  function drawStage() {
+    if (!canvas || !ctx) return
+
+    ctx.clearRect(0, 0, canvas.width, canvas.height)
+    ctx.save()
+    
     ctx.fillStyle = '#999999'
     ctx.fillRect(0, 0, canvas.width, canvas.height)
-
-    ctx.save()
-    ctx.translate(panX + RULER_SIZE, panY + RULER_SIZE)
+    
+    ctx.translate(panX, panY)
     ctx.scale(zoom, zoom)
-
-    ctx.fillStyle = '#ffffff'
-    ctx.fillRect(0, 0, WORK_AREA_WIDTH, WORK_AREA_HEIGHT)
-
-    ctx.strokeStyle = '#333'
-    ctx.lineWidth = 2 / zoom
-    ctx.strokeRect(0, 0, WORK_AREA_WIDTH, WORK_AREA_HEIGHT)
-
-    ctx.strokeStyle = '#ddd'
+    
+    ctx.strokeStyle = '#666'
     ctx.lineWidth = 1 / zoom
-    const gridSize = 10
-    for (let x = gridSize; x < WORK_AREA_WIDTH; x += gridSize) {
+    ctx.strokeRect(RULER_SIZE, RULER_SIZE, WORK_AREA_WIDTH, WORK_AREA_HEIGHT)
+    
+    ctx.fillStyle = '#ddd'
+    ctx.font = `${10 / zoom}px sans-serif`
+    for (let i = 0; i <= WORK_AREA_WIDTH; i += 50) {
+      ctx.fillText(`${i}`, RULER_SIZE + i, RULER_SIZE - 5 / zoom)
       ctx.beginPath()
-      ctx.moveTo(x, 0)
-      ctx.lineTo(x, WORK_AREA_HEIGHT)
+      ctx.moveTo(RULER_SIZE + i, RULER_SIZE)
+      ctx.lineTo(RULER_SIZE + i, RULER_SIZE + 5 / zoom)
       ctx.stroke()
     }
-    for (let y = gridSize; y < WORK_AREA_HEIGHT; y += gridSize) {
+    for (let i = 0; i <= WORK_AREA_HEIGHT; i += 50) {
+      ctx.fillText(`${i}`, 5 / zoom, RULER_SIZE + i)
       ctx.beginPath()
-      ctx.moveTo(0, y)
-      ctx.lineTo(WORK_AREA_WIDTH, y)
+      ctx.moveTo(RULER_SIZE, RULER_SIZE + i)
+      ctx.lineTo(RULER_SIZE + 5 / zoom, RULER_SIZE + i)
       ctx.stroke()
+    }
+    
+    if (!project || !project.svg_files) {
+      ctx.restore()
+      return
     }
 
     project.svg_files.forEach(svg => {
       svg.paths.forEach(path => {
         if (path.action === 'ignore') return
+        if (!path.coordinates || path.coordinates.length === 0) return
 
         ctx!.strokeStyle = path.action === 'cut' ? '#ff4444' : '#4444ff'
         ctx!.lineWidth = 2 / zoom
         ctx!.globalAlpha = 0.6
 
         ctx!.beginPath()
-        const startX = Math.random() * WORK_AREA_WIDTH
-        const startY = Math.random() * WORK_AREA_HEIGHT
-        ctx!.moveTo(startX, startY)
-        
-        for (let i = 0; i < 5; i++) {
-          ctx!.lineTo(
-            Math.random() * WORK_AREA_WIDTH,
-            Math.random() * WORK_AREA_HEIGHT
-          )
+        const coords = path.coordinates
+        if (coords.length > 0) {
+          const x0 = RULER_SIZE + coords[0][0] * coordTransform.scaleX + coordTransform.offsetX
+          const y0 = RULER_SIZE + coords[0][1] * coordTransform.scaleY + coordTransform.offsetY
+          ctx!.moveTo(x0, y0)
+          
+          for (let i = 1; i < coords.length; i++) {
+            const x = RULER_SIZE + coords[i][0] * coordTransform.scaleX + coordTransform.offsetX
+            const y = RULER_SIZE + coords[i][1] * coordTransform.scaleY + coordTransform.offsetY
+            ctx!.lineTo(x, y)
+          }
         }
         ctx!.stroke()
         ctx!.globalAlpha = 1.0
       })
     })
-
-    ctx.fillStyle = $executionStatus.running ? '#ff0000' : '#00ff00'
-    ctx.beginPath()
-    ctx.arc($laserPosition.x, $laserPosition.y, 5 / zoom, 0, Math.PI * 2)
-    ctx.fill()
-
-    ctx.strokeStyle = '#ffffff'
-    ctx.lineWidth = 2 / zoom
-    ctx.beginPath()
-    ctx.arc($laserPosition.x, $laserPosition.y, 5 / zoom, 0, Math.PI * 2)
-    ctx.stroke()
-
+    
+    if ($laserPosition) {
+      const laserX = RULER_SIZE + $laserPosition.x * coordTransform.scaleX + coordTransform.offsetX
+      const laserY = RULER_SIZE + $laserPosition.y * coordTransform.scaleY + coordTransform.offsetY
+      
+      ctx.fillStyle = '#ff0000'
+      ctx.beginPath()
+      ctx.arc(laserX, laserY, 3 / zoom, 0, Math.PI * 2)
+      ctx.fill()
+      
+      ctx.strokeStyle = '#ff0000'
+      ctx.lineWidth = 1 / zoom
+      ctx.beginPath()
+      ctx.moveTo(laserX - 10 / zoom, laserY)
+      ctx.lineTo(laserX + 10 / zoom, laserY)
+      ctx.moveTo(laserX, laserY - 10 / zoom)
+      ctx.lineTo(laserX, laserY + 10 / zoom)
+      ctx.stroke()
+    }
+    
     ctx.restore()
-
-    drawRulers()
   }
 
-  function drawRulers() {
-    if (!ctx || !canvas) return
+  let animationFrameId: number | null = null
+  let lastAnimationTime = 0
+  let allPaths: any[] = []
 
-    ctx.fillStyle = '#666'
-    ctx.fillRect(0, 0, canvas.width, RULER_SIZE)
-    ctx.fillRect(0, 0, RULER_SIZE, canvas.height)
+  $: allPaths = (project && project.svg_files) ? project.svg_files.flatMap(svg => 
+    svg.paths.filter(p => p.action !== 'ignore' && p.coordinates && p.coordinates.length > 0)
+  ) : []
 
-    ctx.fillStyle = '#ffffff'
-    ctx.font = '10px monospace'
-    ctx.textAlign = 'center'
-    ctx.textBaseline = 'middle'
-
-    for (let i = 0; i <= WORK_AREA_WIDTH; i += 50) {
-      const x = RULER_SIZE + panX + i * zoom
-      if (x >= RULER_SIZE && x <= canvas.width) {
-        ctx.fillText(`${i}`, x, RULER_SIZE / 2)
-      }
+  function animationLoop(timestamp: number) {
+    if (!$animationState.isPlaying) {
+      animationFrameId = null
+      return
     }
 
-    ctx.textAlign = 'right'
-    for (let i = 0; i <= WORK_AREA_HEIGHT; i += 50) {
-      const y = RULER_SIZE + panY + i * zoom
-      if (y >= RULER_SIZE && y <= canvas.height) {
-        ctx.fillText(`${i}`, RULER_SIZE - 5, y)
-      }
+    const deltaTime = lastAnimationTime ? timestamp - lastAnimationTime : 0
+    lastAnimationTime = timestamp
+
+    if (allPaths.length === 0) {
+      stopAnimation()
+      return
     }
+
+    const currentPath = allPaths[$animationState.currentPathIndex]
+    if (!currentPath || !currentPath.coordinates) {
+      stopAnimation()
+      return
+    }
+
+    const pathLength = calculatePathLength(currentPath.coordinates)
+    const progressIncrement = (deltaTime / 1000) * $animationState.speed * 50 / pathLength
+    
+    animationState.update(state => {
+      let newProgress = state.currentPathProgress + progressIncrement
+      let newPathIndex = state.currentPathIndex
+
+      if (newProgress >= 1.0) {
+        newProgress = 0
+        newPathIndex++
+        
+        if (newPathIndex >= allPaths.length) {
+          return {
+            ...state,
+            isPlaying: false,
+            currentPathIndex: 0,
+            currentPathProgress: 0
+          }
+        }
+      }
+
+      const path = allPaths[newPathIndex]
+      if (path && path.coordinates) {
+        const pos = interpolatePathPosition(path.coordinates, newProgress)
+        laserPosition.set(pos)
+      }
+
+      return {
+        ...state,
+        currentPathIndex: newPathIndex,
+        currentPathProgress: newProgress
+      }
+    })
+
+    animationFrameId = requestAnimationFrame(animationLoop)
+  }
+
+  function calculatePathLength(coords: Array<[number, number]>): number {
+    let length = 0
+    for (let i = 1; i < coords.length; i++) {
+      const dx = coords[i][0] - coords[i-1][0]
+      const dy = coords[i][1] - coords[i-1][1]
+      length += Math.sqrt(dx * dx + dy * dy)
+    }
+    return length || 1
+  }
+
+  function interpolatePathPosition(coords: Array<[number, number]>, progress: number): { x: number, y: number } {
+    if (coords.length === 0) return { x: 0, y: 0 }
+    if (coords.length === 1) return { x: coords[0][0], y: coords[0][1] }
+    
+    const totalLength = calculatePathLength(coords)
+    const targetDistance = progress * totalLength
+    
+    let currentDistance = 0
+    for (let i = 1; i < coords.length; i++) {
+      const dx = coords[i][0] - coords[i-1][0]
+      const dy = coords[i][1] - coords[i-1][1]
+      const segmentLength = Math.sqrt(dx * dx + dy * dy)
+      
+      if (currentDistance + segmentLength >= targetDistance) {
+        const segmentProgress = (targetDistance - currentDistance) / segmentLength
+        return {
+          x: coords[i-1][0] + dx * segmentProgress,
+          y: coords[i-1][1] + dy * segmentProgress
+        }
+      }
+      
+      currentDistance += segmentLength
+    }
+    
+    return { x: coords[coords.length-1][0], y: coords[coords.length-1][1] }
+  }
+
+  $: if ($animationState.isPlaying && !animationFrameId) {
+    lastAnimationTime = 0
+    animationFrameId = requestAnimationFrame(animationLoop)
   }
 
   function toggleAnimation() {
-    animationState.update(state => ({
-      ...state,
-      isPlaying: !state.isPlaying
-    }))
+    animationState.update(state => {
+      const newIsPlaying = !state.isPlaying
+      if (newIsPlaying) {
+        lastAnimationTime = 0
+      }
+      return {
+        ...state,
+        isPlaying: newIsPlaying
+      }
+    })
   }
 
   function stopAnimation() {
@@ -192,23 +336,42 @@
       currentPathIndex: 0,
       currentPathProgress: 0
     }))
+    laserPosition.set({ x: 0, y: 0 })
   }
 
-  function changeSpeed(delta: number) {
+  function increaseSpeed() {
     animationState.update(state => ({
       ...state,
-      speed: Math.max(0.1, Math.min(5, state.speed + delta))
+      speed: Math.min(5, state.speed + 0.5)
     }))
   }
 
-  onDestroy(() => {
-  })
+  function decreaseSpeed() {
+    animationState.update(state => ({
+      ...state,
+      speed: Math.max(0.5, state.speed - 0.5)
+    }))
+  }
+
+  function handleProgressClick(pathIndex: number) {
+    animationState.update(state => ({
+      ...state,
+      isPlaying: false,
+      currentPathIndex: pathIndex,
+      currentPathProgress: 0
+    }))
+    
+    const path = allPaths[pathIndex]
+    if (path && path.coordinates && path.coordinates.length > 0) {
+      laserPosition.set({ x: path.coordinates[0][0], y: path.coordinates[0][1] })
+    }
+  }
 </script>
 
 <div class="stage">
-  <canvas 
-    bind:this={canvas} 
-    width={800} 
+  <canvas
+    bind:this={canvas}
+    width={800}
     height={600}
     on:wheel={handleWheel}
     on:mousedown={handleMouseDown}
@@ -222,27 +385,28 @@
     <span>{Math.round(zoom * 100)}%</span>
     <button on:click={zoomIn}>+</button>
   </div>
-
+  
   <div class="animation-controls">
     <button on:click={toggleAnimation}>
-      {$animationState.isPlaying ? '⏸' : '▶️'}
+      {$animationState.isPlaying ? '⏸' : '▶'}
     </button>
     <button on:click={stopAnimation}>⏹</button>
-    <button on:click={() => changeSpeed(-0.1)}>−</button>
+    <button on:click={decreaseSpeed}>−</button>
     <span>{$animationState.speed.toFixed(1)}x</span>
-    <button on:click={() => changeSpeed(0.1)}>+</button>
+    <button on:click={increaseSpeed}>+</button>
   </div>
-
+  
   <div class="progress-bar">
     <div class="progress-track">
-      {#each project.svg_files as svg}
-        {#each svg.paths as path, i}
-          <div 
-            class="progress-segment"
-            class:active={i === $animationState.currentPathIndex}
-            style="flex: 1"
-          ></div>
-        {/each}
+      {#each allPaths as path, i}
+        <div 
+          class="progress-segment"
+          class:active={i === $animationState.currentPathIndex}
+          style="flex: 1"
+          on:click={() => handleProgressClick(i)}
+          role="button"
+          tabindex="0"
+        ></div>
       {/each}
     </div>
   </div>
@@ -253,122 +417,104 @@
     width: 100%;
     height: 100%;
     position: relative;
-    background-color: #999999;
-    overflow: hidden;
+    background-color: #0a0a0a;
+    display: flex;
+    flex-direction: column;
   }
 
   canvas {
-    width: 100%;
-    height: 100%;
+    flex: 1;
     cursor: crosshair;
-  }
-
-  canvas:active {
-    cursor: grabbing;
   }
 
   .zoom-controls {
     position: absolute;
     top: 10px;
     right: 10px;
-    display: flex;
-    gap: 8px;
-    align-items: center;
-    background: rgba(0, 0, 0, 0.7);
-    padding: 8px 12px;
+    background-color: rgba(0, 0, 0, 0.7);
+    padding: 0.5rem;
     border-radius: 4px;
-    color: #fff;
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
   }
 
   .zoom-controls button {
-    background: #333;
-    border: 1px solid #555;
-    color: #fff;
-    width: 28px;
-    height: 28px;
-    border-radius: 4px;
+    background-color: #333;
+    color: white;
+    border: none;
+    padding: 0.3rem 0.6rem;
     cursor: pointer;
-    font-size: 16px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
+    border-radius: 3px;
+    font-size: 1rem;
   }
 
   .zoom-controls button:hover {
-    background: #444;
+    background-color: #555;
   }
 
   .zoom-controls span {
+    color: white;
     min-width: 50px;
     text-align: center;
-    font-size: 14px;
   }
 
   .animation-controls {
     position: absolute;
-    bottom: 60px;
+    bottom: 50px;
     right: 10px;
-    display: flex;
-    gap: 8px;
-    align-items: center;
-    background: rgba(0, 0, 0, 0.7);
-    padding: 8px 12px;
+    background-color: rgba(0, 0, 0, 0.7);
+    padding: 0.5rem;
     border-radius: 4px;
-    color: #fff;
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
   }
 
   .animation-controls button {
-    background: #333;
-    border: 1px solid #555;
-    color: #fff;
-    width: 32px;
-    height: 32px;
-    border-radius: 4px;
+    background-color: #333;
+    color: white;
+    border: none;
+    padding: 0.4rem 0.7rem;
     cursor: pointer;
-    font-size: 16px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
+    border-radius: 3px;
+    font-size: 1.2rem;
   }
 
   .animation-controls button:hover {
-    background: #444;
+    background-color: #555;
   }
 
   .animation-controls span {
+    color: white;
     min-width: 40px;
     text-align: center;
-    font-size: 14px;
   }
 
   .progress-bar {
-    position: absolute;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    height: 40px;
-    background: rgba(0, 0, 0, 0.7);
-    padding: 8px;
+    height: 30px;
+    background-color: #1a1a1a;
+    border-top: 1px solid #333;
+    padding: 5px;
   }
 
   .progress-track {
-    display: flex;
     height: 100%;
+    display: flex;
     gap: 2px;
   }
 
   .progress-segment {
-    background: #333;
-    border-radius: 2px;
-    transition: background 0.2s;
-  }
-
-  .progress-segment.active {
-    background: #646cff;
+    background-color: #333;
+    cursor: pointer;
+    transition: background-color 0.2s;
   }
 
   .progress-segment:hover {
-    background: #555;
-    cursor: pointer;
+    background-color: #555;
+  }
+
+  .progress-segment.active {
+    background-color: #646cff;
   }
 </style>
