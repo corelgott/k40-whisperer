@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { createEventDispatcher } from 'svelte'
+  import { createEventDispatcher, onMount } from 'svelte'
   import type { Project, SVGFile, PathConfig, VirtualGroup } from '../lib/api'
   import { pathAPI, virtualGroupAPI, projectDefaultsAPI } from '../lib/api'
 
@@ -7,21 +7,34 @@
 
   const dispatch = createEventDispatcher()
 
-  let expandedNodes: Set<string> = new Set(['project'])
+  const STORAGE_KEY = 'k40-tree-collapsed-nodes'
+  let collapsedNodes: Set<string> = new Set()
   let fileInput: HTMLInputElement
   let selectedPathId: string | null = null
 
-  function toggleExpand(nodeId: string) {
-    if (expandedNodes.has(nodeId)) {
-      expandedNodes.delete(nodeId)
-    } else {
-      expandedNodes.add(nodeId)
+  onMount(() => {
+    const stored = localStorage.getItem(STORAGE_KEY)
+    if (stored) {
+      try {
+        collapsedNodes = new Set(JSON.parse(stored))
+      } catch (e) {
+        console.error('Failed to parse stored collapse state:', e)
+      }
     }
-    expandedNodes = expandedNodes
+  })
+
+  function toggleExpand(nodeId: string) {
+    if (collapsedNodes.has(nodeId)) {
+      collapsedNodes.delete(nodeId)
+    } else {
+      collapsedNodes.add(nodeId)
+    }
+    collapsedNodes = collapsedNodes
+    localStorage.setItem(STORAGE_KEY, JSON.stringify([...collapsedNodes]))
   }
 
   function isExpanded(nodeId: string): boolean {
-    return expandedNodes.has(nodeId)
+    return !collapsedNodes.has(nodeId)
   }
 
   async function updateProjectDefault(field: string, value: any) {

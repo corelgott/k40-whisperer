@@ -83,11 +83,11 @@
     </div>
 
     <div class="action-controls">
-      <button class="execute-btn" on:click={execute} disabled={executing || !$selectedProjectId}>
-        {executing ? 'Ausführung läuft...' : 'Projekt ausführen'}
+      <button class="execute-btn" on:click={execute} disabled={executing || !$selectedProjectId} title={executing ? 'Ausführung läuft...' : 'Projekt ausführen'}>
+        {executing ? '⏸' : '▶'}
       </button>
-      <button class="stop-btn" on:click={stop}>
-        Stop
+      <button class="stop-btn" on:click={stop} title="Stop">
+        ⏹
       </button>
     </div>
   </div>
@@ -139,26 +139,41 @@
 
   .action-controls {
     display: flex;
-    flex-direction: column;
+    flex-direction: row;
     gap: 0.5rem;
     flex: 1;
   }
 
+  .action-controls button {
+    flex: 1;
+    font-size: 1.5rem;
+    min-width: 3rem;
+  }
+
   .execute-btn {
-    background-color: #4caf50;
+    background-color: #22c55e;
     font-weight: bold;
+    border: 2px solid #16a34a;
   }
 
   .execute-btn:hover:not(:disabled) {
-    background-color: #45a049;
+    background-color: #16a34a;
+    border-color: #15803d;
+  }
+
+  .execute-btn:disabled {
+    background-color: #4b5563;
+    border-color: #374151;
   }
 
   .stop-btn {
-    background-color: #ff4444;
+    background-color: #ef4444;
     font-weight: bold;
+    border: 2px solid #dc2626;
   }
 
   .stop-btn:hover {
-    background-color: #cc0000;
+    background-color: #dc2626;
+    border-color: #b91c1c;
   }
 </style>
