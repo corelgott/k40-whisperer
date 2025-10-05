@@ -11,6 +11,9 @@ class Project(BaseModel):
     name: str
     created_at: datetime
     updated_at: datetime
+    default_action: Optional[str] = "cut"
+    default_speed_mm_s: Optional[float] = 100.0
+    default_repetitions: Optional[int] = 1
     svg_files: List[Any] = []
     virtual_groups: List[Any] = []
     svg_count: int = 0
@@ -23,6 +26,9 @@ class Project(BaseModel):
                 "name": "My Laser Project",
                 "created_at": "2025-10-03T12:00:00",
                 "updated_at": "2025-10-03T12:00:00",
+                "default_action": "cut",
+                "default_speed_mm_s": 100.0,
+                "default_repetitions": 1,
                 "svg_files": [],
                 "virtual_groups": [],
                 "svg_count": 0,
