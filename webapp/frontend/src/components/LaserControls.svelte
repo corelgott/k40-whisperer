@@ -1,0 +1,203 @@
+<script lang="ts">
+  import { laserAPI } from '../lib/api'
+  import { selectedProjectId, laserPosition } from '../lib/stores'
+
+  export let compact: boolean = false
+
+  let moving = false
+  let homing = false
+  let executing = false
+  let error = ''
+
+  const moveAmount = 10
+
+  async function move(dx: number, dy: number) {
+    moving = true
+    error = ''
+    try {
+      const response = await laserAPI.move(dx, dy)
+      laserPosition.set({ x: response.data.x, y: response.data.y })
+    } catch (e: any) {
+      error = e.message || 'Bewegungsfehler'
+    } finally {
+      moving = false
+    }
+  }
+
+  async function home() {
+    homing = true
+    error = ''
+    try {
+      const response = await laserAPI.home()
+      laserPosition.set({ x: response.data.x, y: response.data.y })
+    } catch (e: any) {
+      error = e.message || 'Home-Fehler'
+    } finally {
+      homing = false
+    }
+  }
+
+  async function execute() {
+    if (!$selectedProjectId) return
+    
+    executing = true
+    error = ''
+    try {
+      await laserAPI.execute($selectedProjectId)
+    } catch (e: any) {
+      error = e.message || 'Ausführungsfehler'
+    } finally {
+      executing = false
+    }
+  }
+
+  async function stop() {
+    try {
+      await laserAPI.stop()
+    } catch (e: any) {
+      error = e.message || 'Stop-Fehler'
+    }
+  }
+</script>
+
+<div class="laser-controls" class:compact>
+  {#if !compact}
+    <h3>Laser-Steuerung</h3>
+  {/if}
+
+  {#if error}
+    <div class="error">{error}</div>
+  {/if}
+
+  <div class="control-grid">
+    <div class="movement-controls">
+      <div class="move-row">
+        <button on:click={() => move(0, moveAmount)} disabled={moving}>↑</button>
+      </div>
+      <div class="move-row">
+        <button on:click={() => move(-moveAmount, 0)} disabled={moving}>←</button>
+        <button on:click={home} disabled={homing}>
+          {homing ? '...' : '⌂'}
+        </button>
+        <button on:click={() => move(moveAmount, 0)} disabled={moving}>→</button>
+      </div>
+      <div class="move-row">
+        <button on:click={() => move(0, -moveAmount)} disabled={moving}>↓</button>
+      </div>
+    </div>
+
+    <div class="action-controls">
+      <button class="execute-btn" on:click={execute} disabled={executing || !$selectedProjectId} title={executing ? 'Ausführung läuft...' : 'Projekt ausführen'}>
+        {executing ? '⏸' : '▶'}
+      </button>
+      <button class="stop-btn" on:click={stop} title="Stop">
+        ⏹
+      </button>
+    </div>
+  </div>
+</div>
+
+<style>
+  .laser-controls {
+    padding: 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    border-bottom: 1px solid #333;
+  }
+
+  .laser-controls.compact {
+    padding: 0.5rem;
+    gap: 0.5rem;
+  }
+
+  h3 {
+    margin: 0;
+  }
+
+  .laser-controls.compact h3 {
+    font-size: 0.9em;
+  }
+
+  .laser-controls.compact .movement-controls button {
+    width: 2.5rem;
+    height: 2.5rem;
+    font-size: 1.2rem;
+  }
+
+  .laser-controls.compact .action-controls button {
+    font-size: 1.2rem;
+  }
+
+  .error {
+    background-color: #ff4444;
+    color: white;
+    padding: 0.5rem;
+    border-radius: 4px;
+    font-size: 0.9rem;
+  }
+
+  .control-grid {
+    display: flex;
+    gap: 2rem;
+    align-items: center;
+  }
+
+  .movement-controls {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .move-row {
+    display: flex;
+    gap: 0.5rem;
+    justify-content: center;
+  }
+
+  .movement-controls button {
+    width: 3rem;
+    height: 3rem;
+    font-size: 1.5rem;
+  }
+
+  .action-controls {
+    display: flex;
+    flex-direction: row;
+    gap: 0.5rem;
+    flex: 1;
+  }
+
+  .action-controls button {
+    flex: 1;
+    font-size: 1.5rem;
+    min-width: 3rem;
+  }
+
+  .execute-btn {
+    background-color: #22c55e;
+    font-weight: bold;
+    border: 2px solid #16a34a;
+  }
+
+  .execute-btn:hover:not(:disabled) {
+    background-color: #16a34a;
+    border-color: #15803d;
+  }
+
+  .execute-btn:disabled {
+    background-color: #4b5563;
+    border-color: #374151;
+  }
+
+  .stop-btn {
+    background-color: #ef4444;
+    font-weight: bold;
+    border: 2px solid #dc2626;
+  }
+
+  .stop-btn:hover {
+    background-color: #dc2626;
+    border-color: #b91c1c;
+  }
+</style>
